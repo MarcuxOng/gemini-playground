@@ -7,7 +7,7 @@ import secrets
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import Settings, get_settings
 from app.database.db import get_db
 from app.database.models import APIKey
 
@@ -19,7 +19,7 @@ def hash_api_key(api_key: str) -> str:
     return hashlib.sha256(api_key.encode()).hexdigest()
 
 
-def check_api_key(api_key: str, db: Session) -> bool:
+def check_api_key(api_key: str, db: Session, settings: Settings = Depends(get_settings)) -> bool:
     """
     Synchronous check for API key validity.
     Checks against both the master key and the database.
@@ -37,7 +37,11 @@ def check_api_key(api_key: str, db: Session) -> bool:
     return api_key_record is not None
 
 
-async def verify_api_key(x_api_key: str = Header(...), db: Session = Depends(get_db)) -> APIKey:
+async def verify_api_key(
+    x_api_key: str = Header(...),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> APIKey:
     """
     Dependency to verify API keys by hashing and checking the DB.
     Returns the APIKey record for the authenticated user.
@@ -63,7 +67,9 @@ async def verify_api_key(x_api_key: str = Header(...), db: Session = Depends(get
     return api_key_record
 
 
-async def verify_master_key(x_api_key: str = Header(...)) -> None:
+async def verify_master_key(
+    x_api_key: str = Header(...), settings: Settings = Depends(get_settings)
+) -> None:
     """
     Dependency that only allows requests using the MASTER_API_KEY.
     Used for administrative endpoints like creating/listing keys.
