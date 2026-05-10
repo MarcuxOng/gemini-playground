@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -7,9 +9,9 @@ from app.utils.response import APIResponse
 logger = logging.getLogger(__name__)
 
 
-async def http_exception_handler(request: Request, exc: HTTPException):
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     logger.warning(f"HTTP exception for {request.url.path}: {exc}")
-    response = APIResponse(
+    response: APIResponse[None] = APIResponse(
         success=False,
         error=str(exc.detail),
         meta={
@@ -24,9 +26,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
-async def unhandled_exception_handler(request: Request, exc: Exception):
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception(f"Unhandled exception for {request.url.path}: {exc}")
-    response = APIResponse(
+    response: APIResponse[None] = APIResponse(
         success=False,
         error="Internal server error",
         meta={

@@ -2,14 +2,17 @@
 Converts external MCP server configs into LangChain-compatible tools
 using langchain-mcp-adapters.
 """
+
+from __future__ import annotations
+
 import logging
-from typing import List
+
 from langchain_core.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
 
-async def load_mcp_tools(server_config: dict) -> List[BaseTool]:
+async def load_mcp_tools(server_config: dict[str, object]) -> list[BaseTool]:
     """
     Connect to an external MCP server and return its tools as LangChain BaseTools.
     """
@@ -37,11 +40,11 @@ async def load_mcp_tools(server_config: dict) -> List[BaseTool]:
             # SECURITY: Disabling stdio transport for user-provided configurations
             # to prevent arbitrary command execution.
             logger.error(f"Rejected stdio transport for MCP server '{server_config.get('name')}': stdio is disabled for user-registered servers.")
-            raise ValueError(f"stdio transport is not allowed for user-registered servers due to security risks.")
+            raise ValueError("stdio transport is not allowed for user-registered servers due to security risks.")
         else:
             raise ValueError(f"Unsupported MCP transport: {transport}")
 
-        async with MultiServerMCPClient(servers) as client:
+        async with MultiServerMCPClient(servers) as client:  # type: ignore[arg-type, misc]
             tools = await client.get_tools()
             logger.info(f"Loaded {len(tools)} tools from MCP server '{server_config['name']}'")
             return tools

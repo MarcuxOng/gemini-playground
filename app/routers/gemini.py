@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import json
 import logging
+from collections.abc import AsyncGenerator
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -28,7 +31,7 @@ class ProviderInput(BaseModel):
 
 
 @router.get("/models", response_model=APIResponse)
-async def get_gemini_model():
+async def get_gemini_model() -> APIResponse:  # type: ignore[type-arg]
     logger.info("Fetching available Gemini models")
     models = list_gemini_models()
     return APIResponse(data=models)
@@ -39,10 +42,10 @@ async def get_gemini_model():
 async def gemini(
     request: Request, 
     body: ProviderInput
-):
+) -> APIResponse:  # type: ignore[type-arg]
     logger.info(f"Calling Gemini API with model: {body.model}, prompt: {body.prompt}")
     response = gemini_service(
-        model=body.model, 
+        model=body.model,
         prompt=body.prompt
     )
 
@@ -54,13 +57,13 @@ async def gemini(
 async def tools(
     request: Request, 
     body: ProviderInput
-):
+) -> APIResponse:  # type: ignore[type-arg]
     """
     Gemini with tool calling support.
     """
     logger.info(f"Calling Gemini tools with model: {body.model}, prompt: {body.prompt}")
     response = tools_service(
-        model=body.model, 
+        model=body.model,
         prompt=body.prompt
     )
 
@@ -72,12 +75,12 @@ async def tools(
 async def gemini_stream(
     request: Request, 
     body: ProviderInput
-):
+) -> StreamingResponse:
     """
     Stream Gemini response
     """
     logger.info(f"Starting Gemini stream with model: {body.model}, prompt: {body.prompt}")
-    async def event_generator():
+    async def event_generator() -> AsyncGenerator[str, None]:
         try:
             async for chunk in gemini_stream_service(
                 body.model, 

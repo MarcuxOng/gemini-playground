@@ -2,6 +2,8 @@
 News tool — fetches current news articles using NewsAPI.
 """
 
+from __future__ import annotations
+
 import logging
 import requests
 

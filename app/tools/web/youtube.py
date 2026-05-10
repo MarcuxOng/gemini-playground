@@ -2,6 +2,8 @@
 YouTube Transcript tool — fetches transcripts from YouTube videos.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 try:

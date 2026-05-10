@@ -1,10 +1,13 @@
-from typing import Generic, Optional, TypeVar
+from __future__ import annotations
+
+from typing import Generic, TypeVar
+
 from pydantic import BaseModel
 
 T = TypeVar("T")
 
 class APIResponse(BaseModel, Generic[T]):
     success: bool = True
-    data: Optional[T] = None
-    error: Optional[str] = None
-    meta: Optional[dict] = None  # pagination, timing, etc.
+    data: T | None = None
+    error: str | None = None
+    meta: dict[str, object] | None = None  # pagination, timing, etc.

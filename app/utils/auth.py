@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import hashlib
 import secrets
@@ -30,7 +32,7 @@ def check_api_key(api_key: str, db: Session) -> bool:
     hashed = hash_api_key(api_key)
     api_key_record = db.query(APIKey).filter(
         APIKey.hashed_key == hashed,
-        APIKey.is_active == True
+        APIKey.is_active.is_(True)
     ).first()
 
     return api_key_record is not None
@@ -52,7 +54,7 @@ async def verify_api_key(
     hashed = hash_api_key(x_api_key)
     api_key_record = db.query(APIKey).filter(
         APIKey.hashed_key == hashed,
-        APIKey.is_active == True
+        APIKey.is_active.is_(True)
     ).first()
 
     if not api_key_record:
@@ -66,7 +68,7 @@ async def verify_api_key(
     return api_key_record
 
 
-async def verify_master_key(x_api_key: str = Header(...)):
+async def verify_master_key(x_api_key: str = Header(...)) -> None:
     """
     Dependency that only allows requests using the MASTER_API_KEY.
     Used for administrative endpoints like creating/listing keys.

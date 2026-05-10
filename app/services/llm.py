@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_vertexai import ChatVertexAI
@@ -7,7 +9,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-def build_llm(model_name: str, temperature: float = 0.1):
+def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatGoogleGenerativeAI:
     """Builds a Gemini LLM via Vertex AI with local fallback to Google AI Studio."""
     logger.info(f"Building Gemini LLM: {model_name}")
     try:

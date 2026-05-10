@@ -2,6 +2,8 @@
 Wikipedia tool — fetches summaries and facts from Wikipedia.
 """
 
+from __future__ import annotations
+
 import logging
 import requests
 

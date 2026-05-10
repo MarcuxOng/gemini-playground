@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.routers.agents import router as agents_router
 from app.routers.auth import router as auth_router
 from app.routers.gemini import router as gemini_router

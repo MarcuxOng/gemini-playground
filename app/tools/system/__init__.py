@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.tools.system import (
     code_runner,
     regex, 

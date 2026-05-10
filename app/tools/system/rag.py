@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import logging
 
-from app.tools import register
 from app.services.rag import search_documents
+from app.tools import register
 
 logger = logging.getLogger(__name__)
 

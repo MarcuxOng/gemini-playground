@@ -2,11 +2,15 @@
 A research-focused ReAct agent.
 """
 
-from typing import List
+from __future__ import annotations
+
+from typing import Any
+
 from langchain_core.tools import BaseTool
 
 from app.agents.base import build_agent, merge_tools
 
+CompiledGraph = Any
 
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
@@ -35,9 +39,9 @@ TOOLS = [
 
 def build_research_agent(
     model: str, 
-    checkpointer=None,
-    extra_tools: List[BaseTool] = None,
-):
+    checkpointer: Any = None,
+    extra_tools: list[BaseTool] | None = None,
+) -> CompiledGraph:
     """
     Build and return a research ReAct agent.
 
@@ -50,7 +54,7 @@ def build_research_agent(
         A compiled LangGraph agent.
     """
     try:
-        combined_tools = merge_tools(TOOLS, extra_tools)
+        combined_tools: list[str | BaseTool] = merge_tools(TOOLS, extra_tools)
         res = build_agent(
             tools=combined_tools,
             system_prompt=SYSTEM_PROMPT,
@@ -60,3 +64,4 @@ def build_research_agent(
         return res
     except Exception:
         raise
+

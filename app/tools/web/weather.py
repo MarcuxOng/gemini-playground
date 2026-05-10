@@ -2,6 +2,8 @@
 Weather tool — provides the LLM with current weather information via OpenWeatherMap.
 """
 
+from __future__ import annotations
+
 import logging
 import requests
 

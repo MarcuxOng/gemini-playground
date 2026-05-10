@@ -2,9 +2,10 @@
 Time tool — provides current date and time information.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Optional
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 @register
-def get_datetime_info(timezone_name: Optional[str] = None) -> str:
+def get_datetime_info(timezone_name: str | None = None) -> str:
     """
     Get the current date and time, optionally in a specific timezone.
     
@@ -26,7 +27,7 @@ def get_datetime_info(timezone_name: Optional[str] = None) -> str:
     """
     try:
         logger.info(f"Fetching datetime info for timezone: {timezone_name or 'UTC'}")
-        tz = ZoneInfo(timezone_name) if timezone_name else timezone.utc
+        tz = ZoneInfo(timezone_name) if timezone_name else UTC
         now = datetime.now(tz)
         
         return (

@@ -2,30 +2,33 @@
 Math tool — safely evaluates mathematical expressions.
 """
 
+from __future__ import annotations
+
 import ast
 import logging
 import math
 import operator
+from typing import Any
 
 from app.tools import register
 
 logger = logging.getLogger(__name__)
 
-_OPS = {
+_OPS: dict[type, Any] = {
     ast.Add: operator.add, ast.Sub: operator.sub,
     ast.Mult: operator.mul, ast.Div: operator.truediv,
     ast.Pow: operator.pow, ast.Mod: operator.mod,
     ast.FloorDiv: operator.floordiv,
     ast.USub: operator.neg, ast.UAdd: operator.pos,
 }
-_FNS = {n: getattr(math, n) for n in dir(math) if not n.startswith("_")}
-_CONSTS = {"pi": math.pi, "e": math.e, "tau": math.tau, "inf": math.inf}
+_FNS: dict[str, Any] = {n: getattr(math, n) for n in dir(math) if not n.startswith("_")}
+_CONSTS: dict[str, float] = {"pi": math.pi, "e": math.e, "tau": math.tau, "inf": math.inf}
 
 
-def _safe_eval(node):
+def _safe_eval(node: ast.AST) -> Any:
     if isinstance(node, ast.Expression):
         return _safe_eval(node.body)
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+    if isinstance(node, ast.Constant) and isinstance(node.value, int | float):
         return node.value
     if isinstance(node, ast.Name):
         if node.id in _CONSTS:

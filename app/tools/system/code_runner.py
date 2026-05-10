@@ -2,6 +2,8 @@
 Code Runner tool — executes code in multiple languages using the Wandbox API (sandboxed).
 """
 
+from __future__ import annotations
+
 import logging
 import httpx
 

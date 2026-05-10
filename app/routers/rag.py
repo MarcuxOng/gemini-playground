@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -30,9 +32,9 @@ class QueryRequest(BaseModel):
 @router.post("/ingest", response_model=APIResponse)
 @limiter.limit("5/minute")
 async def ingest_documents(
-    request: Request, 
+    request: Request,
     body: IngestRequest
-):
+) -> APIResponse:
     """
     Ingest text into the Pinecone vector store.
     """
@@ -54,17 +56,17 @@ async def ingest_documents(
 @router.post("/query", response_model=APIResponse)
 @limiter.limit("20/minute")
 async def query_rag(
-    request: Request, 
+    request: Request,
     body: QueryRequest
-):
+) -> APIResponse:
     """
     Query the RAG pipeline.
     """
     try:
         response = await run_in_threadpool(
-            query_service, 
-            body.query, 
-            body.model, 
+            query_service,
+            body.query,
+            body.model,
             body.provider
         )
         return APIResponse(data={

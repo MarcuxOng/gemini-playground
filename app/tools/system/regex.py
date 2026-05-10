@@ -2,6 +2,8 @@
 Regex Tester tool — validates and tests regular expressions.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 

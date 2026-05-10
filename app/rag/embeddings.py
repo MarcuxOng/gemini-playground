@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import logging
+
 from google import genai
 from langchain_core.embeddings import Embeddings
-from typing import List
 
 from app.config import settings
 
@@ -16,7 +18,7 @@ class GeminiEmbeddings(Embeddings):
         self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = model
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed search docs."""
         try:
             response = self.client.models.embed_content(
@@ -24,12 +26,17 @@ class GeminiEmbeddings(Embeddings):
                 contents=texts,
                 config={'task_type': 'retrieval_document'}
             )
-            return [e.values for e in response.embeddings]
+            embeddings = []
+            if response.embeddings:
+                for e in response.embeddings:
+                    if e.values:
+                        embeddings.append(e.values)
+            return embeddings
         except Exception as e:
             logger.error(f"Error embedding documents: {e}")
             raise
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str) -> list[float]:
         """Embed query text."""
         try:
             response = self.client.models.embed_content(
@@ -37,7 +44,9 @@ class GeminiEmbeddings(Embeddings):
                 contents=text,
                 config={'task_type': 'retrieval_query'}
             )
-            return response.embeddings[0].values
+            if response.embeddings and response.embeddings[0].values:
+                return response.embeddings[0].values
+            return []
         except Exception as e:
             logger.error(f"Error embedding query: {e}")
             raise

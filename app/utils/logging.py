@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
 
 
 class JsonFormatter(logging.Formatter):
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         return json.dumps({
             "level": record.levelname,
             "message": record.getMessage(),
@@ -13,7 +15,7 @@ class JsonFormatter(logging.Formatter):
 
 
 class AlignedFormatter(logging.Formatter):
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         # Save original levelname to restore it later
         orig_levelname = record.levelname
         # Pad levelname + colon to 10 characters (e.g., "INFO:     ")
@@ -23,7 +25,7 @@ class AlignedFormatter(logging.Formatter):
         return result
 
 
-def setup_logging():
+def setup_logging() -> None:
     level = os.getenv("LOG_LEVEL", "INFO")
     handler = logging.StreamHandler()
     if os.getenv("ENV") == "production":

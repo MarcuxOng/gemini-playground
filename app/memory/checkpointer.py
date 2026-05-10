@@ -1,19 +1,24 @@
+from __future__ import annotations
+
 import logging
 import threading
-from langgraph.checkpoint.sqlite import SqliteSaver
+from contextlib import _GeneratorContextManager
+from typing import Any
+
 from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Global instances to be reused and kept alive
-_CHECKPOINTER = None
-_CHECKPOINTER_CTX = None
+_CHECKPOINTER: Any = None
+_CHECKPOINTER_CTX: _GeneratorContextManager[SqliteSaver] | _GeneratorContextManager[PostgresSaver] | None = None
 _CHECKPOINTER_LOCK = threading.Lock()
 
 
-def get_checkpointer():
+def get_checkpointer() -> Any:
     """
     Returns the appropriate LangGraph checkpointer based on DATABASE_URL.
     Handles the context manager returned by from_conn_string and ensures it stays alive.
@@ -21,7 +26,7 @@ def get_checkpointer():
     global _CHECKPOINTER, _CHECKPOINTER_CTX
     if _CHECKPOINTER is not None:
         return _CHECKPOINTER
-    
+
     with _CHECKPOINTER_LOCK:
         if _CHECKPOINTER is not None:
             return _CHECKPOINTER
@@ -32,15 +37,18 @@ def get_checkpointer():
         logger.info(f"Initializing checkpointer with database: {logged_url}")
 
         try:
+            ctx: _GeneratorContextManager[SqliteSaver] | _GeneratorContextManager[PostgresSaver]
             if db_url.startswith("sqlite"):
                 db_path = db_url.replace("sqlite:///", "")
                 # SqliteSaver.from_conn_string is a context manager
-                _CHECKPOINTER_CTX = SqliteSaver.from_conn_string(db_path)
-                _CHECKPOINTER = _CHECKPOINTER_CTX.__enter__()
+                ctx = SqliteSaver.from_conn_string(db_path)
+                _CHECKPOINTER_CTX = ctx
+                _CHECKPOINTER = ctx.__enter__()
             else:
                 # PostgresSaver.from_conn_string is also a context manager
-                _CHECKPOINTER_CTX = PostgresSaver.from_conn_string(db_url)
-                _CHECKPOINTER = _CHECKPOINTER_CTX.__enter__()
+                ctx = PostgresSaver.from_conn_string(db_url)
+                _CHECKPOINTER_CTX = ctx
+                _CHECKPOINTER = ctx.__enter__()
 
             return _CHECKPOINTER
         except Exception as e:
@@ -51,7 +59,7 @@ def get_checkpointer():
             raise
 
 
-def close_checkpointer():
+def close_checkpointer() -> None:
     """Close the checkpointer context manager from FastAPI lifespan shutdown."""
     global _CHECKPOINTER, _CHECKPOINTER_CTX
     with _CHECKPOINTER_LOCK:

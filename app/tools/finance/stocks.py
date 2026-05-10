@@ -2,6 +2,8 @@
 Stocks Tools - A collection of tools for stock market analysis and trading strategies.
 """
 
+from __future__ import annotations
+
 import logging
 import requests
 

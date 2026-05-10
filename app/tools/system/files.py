@@ -2,6 +2,8 @@
 File tool — reads and writes local files.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path
@@ -38,7 +40,7 @@ def read_file(path: str, max_chars: int = 4000) -> str:
         if max_chars <= 0:
             raise ValueError("max_chars must be positive.")
 
-        with open(safe_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(safe_path, encoding="utf-8", errors="replace") as f:
             content = f.read(max_chars + 1)
             
         if len(content) > max_chars:

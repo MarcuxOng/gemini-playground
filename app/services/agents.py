@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import json
 import logging
 import uuid
 
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from fastapi import HTTPException
 from functools import lru_cache
@@ -9,30 +12,32 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, model_validator, ConfigDict
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
-from typing import AsyncGenerator, Optional, List, Any
+from typing import Any
 
 from app.agents import AgentConfig, PRESETS, run_once, build_agent
 from app.database.models import Agents, APIKey, Thread, ThreadMessage, MCPServerConfig
 from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
 
+CompiledGraph = Any
+
 logger = logging.getLogger(__name__)
 
 
 class AgentCreate(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     system_prompt: str
-    tools: List[str]
+    tools: list[str]
     model: str
 
 
 class AgentResponse(BaseModel):
     id: str
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     system_prompt: str
-    tools: List[str]
+    tools: list[str]
     model: str
     is_active: bool
     created_at: datetime
@@ -42,15 +47,15 @@ class AgentResponse(BaseModel):
 
 
 class AgentRunRequest(BaseModel):
-    model: Optional[str] = None
-    preset: Optional[str] = None       # hardcoded preset name
-    agent_id: Optional[str] = None   # DB-backed config id — takes priority
-    mcp_server_ids: Optional[List[str]] = None  # external MCP servers to connect to
+    model: str | None = None
+    preset: str | None = None       # hardcoded preset name
+    agent_id: str | None = None   # DB-backed config id — takes priority
+    mcp_server_ids: list[str] | None = None  # external MCP servers to connect to
     prompt: str
-    thread_id: Optional[str] = None
+    thread_id: str | None = None
 
     @model_validator(mode="after")
-    def check_source(self):
+    def check_source(self) -> AgentRunRequest:
         if bool(self.preset) == bool(self.agent_id):
             raise ValueError("Exactly one of 'preset' or 'agent_id' is required.")
         if self.preset and not self.model:
@@ -60,17 +65,17 @@ class AgentRunRequest(BaseModel):
 
 class AgentRunResponse(BaseModel):
     answer: str
-    preset: Optional[str] = None
+    preset: str | None = None
     model: str
     thread_id: str
 
 
 class AgentUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    system_prompt: Optional[str] = None
-    tools: Optional[List[str]] = None
-    model: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    system_prompt: str | None = None
+    tools: list[str] | None = None
+    model: str | None = None
 
 
 @lru_cache(maxsize=32)
@@ -78,12 +83,12 @@ def _get_cached_agent(
     preset: str, 
     model: str, 
     checkpointer_id: int
-):
+) -> CompiledGraph:
     """
     Cached agent factory to avoid rebuilding the agent on every request.
     Includes checkpointer_id in the cache key to ensure the checkpointer is correctly handled.
     """
-    checkpointer = get_checkpointer()
+    checkpointer: Any = get_checkpointer()
     agent_factory = PRESETS[preset]
     return agent_factory(model=model, checkpointer=checkpointer)
 
@@ -92,8 +97,8 @@ async def _get_agent(
     preset: str,
     model: str,
     checkpointer: Any,
-    extra_tools: List[BaseTool] = None
-):
+    extra_tools: list[BaseTool] | None = None
+) -> CompiledGraph:
     """Helper to get cached or new agent with optional extra tools."""
     if extra_tools:
         # Bypass cache if extra tools are present as they are not hashable
@@ -121,37 +126,44 @@ async def run_agent_service(
     """
     Unified service for running agents.
     """
+    system_prompt: str = ""
+    tools: list[str] = []
+    model: str = ""
+    preset_name: str = ""
+
     # Determine agent config
     if request.agent_id:
-        query = db.query(Agents).filter(
+        agent_query = db.query(Agents).filter(
             Agents.id == request.agent_id,
             Agents.is_active.is_(True),
         )
         if api_key.id != "master":
-            query = query.filter(Agents.owner_id == api_key.id)
-            
-        agent_config_model = query.first()
+            agent_query = agent_query.filter(Agents.owner_id == api_key.id)
+
+        agent_config_model = agent_query.first()
         if not agent_config_model:
             raise HTTPException(status_code=404, detail=f"Agent config {request.agent_id} not found")
-        
-        system_prompt = agent_config_model.system_prompt
-        tools = agent_config_model.tools
-        model = agent_config_model.model
+
+        system_prompt = str(agent_config_model.system_prompt)
+        tools = list(agent_config_model.tools) if agent_config_model.tools else []
+        model = str(agent_config_model.model)
         preset_name = f"custom:{agent_config_model.name}"
     else:
-        if request.preset not in PRESETS:
+        preset = str(request.preset)
+        if preset not in PRESETS:
             raise HTTPException(status_code=400, detail=f"Invalid preset. Available: {list(PRESETS.keys())}")
-        
-        model = request.model
-        preset_name = request.preset
+
+        model = str(request.model)
+        preset_name = preset
 
     # Handle threading
+    thread: Thread | None = None
     if request.thread_id:
-        query = db.query(Thread).filter(Thread.id == request.thread_id)
+        thread_query = db.query(Thread).filter(Thread.id == request.thread_id)
         if api_key.id != "master":
-            query = query.filter(Thread.owner_id == api_key.id)
-            
-        thread = query.first()
+            thread_query = thread_query.filter(Thread.owner_id == api_key.id)
+
+        thread = thread_query.first()
         if not thread:
             raise HTTPException(status_code=404, detail=f"Thread {request.thread_id} not found")
         if (
@@ -175,19 +187,19 @@ async def run_agent_service(
         checkpointer = get_checkpointer()
 
         # Load additional MCP tools if requested
-        mcp_tools = []
+        mcp_tools: list[BaseTool] = []
         if request.mcp_server_ids:
             for server_id in request.mcp_server_ids:
-                query = db.query(MCPServerConfig).filter(
+                mcp_query = db.query(MCPServerConfig).filter(
                     MCPServerConfig.id == server_id,
                     MCPServerConfig.is_active.is_(True)
                 )
                 if api_key.id != "master":
-                    query = query.filter(MCPServerConfig.owner_id == api_key.id)
-                    
-                server_config = query.first()
+                    mcp_query = mcp_query.filter(MCPServerConfig.owner_id == api_key.id)
+
+                server_config = mcp_query.first()
                 if server_config:
-                    config_dict = {
+                    config_dict: dict[str, object] = {
                         "name": server_config.name,
                         "transport": server_config.transport,
                         "url": server_config.url,
@@ -199,9 +211,10 @@ async def run_agent_service(
                     mcp_tools.extend(tools_from_server)
 
         # Build or get cached agent
+        agent: CompiledGraph
         if request.agent_id:
             # Merge agent's native tools with MCP tools
-            combined_tools = tools + mcp_tools
+            combined_tools: list[str | BaseTool] = list(tools) + list(mcp_tools)
             agent = await run_in_threadpool(
                 build_agent,
                 tools=combined_tools,
@@ -211,8 +224,8 @@ async def run_agent_service(
             )
         else:
             agent = await _get_agent(
-                request.preset,
-                model, 
+                preset_name,
+                model,
                 checkpointer,
                 extra_tools=mcp_tools
             )
@@ -224,7 +237,7 @@ async def run_agent_service(
             verbose=False,
         )
         
-        lg_config = {"configurable": {"thread_id": thread.id}}
+        lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}
         answer = await run_in_threadpool(
             run_once, 
             agent, 
@@ -254,13 +267,13 @@ async def run_agent_service(
             answer=answer,
             preset=preset_name,
             model=model,
-            thread_id=thread.id
+            thread_id=str(thread.id)
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.exception(f"Error running agent")
-        raise HTTPException(status_code=500, detail=f"Agent execution failed.") from e
+        logger.exception("Error running agent")
+        raise HTTPException(status_code=500, detail="Agent execution failed.") from e
 
 
 async def run_agent_stream_service(
@@ -271,40 +284,47 @@ async def run_agent_stream_service(
     """
     Unified service for running agents with streaming responses.
     """
+    system_prompt: str = ""
+    tools: list[str] = []
+    model: str = ""
+    preset_name: str = ""
+
     # Determine agent config
     if request.agent_id:
-        query = db.query(Agents).filter(
+        agent_query = db.query(Agents).filter(
             Agents.id == request.agent_id,
             Agents.is_active.is_(True)
         )
         if api_key.id != "master":
-            query = query.filter(Agents.owner_id == api_key.id)
-            
-        agent_config_model = query.first()
+            agent_query = agent_query.filter(Agents.owner_id == api_key.id)
+
+        agent_config_model = agent_query.first()
         if not agent_config_model:
             raise HTTPException(status_code=404, detail=f"Agent config {request.agent_id} not found")
-        
-        system_prompt = agent_config_model.system_prompt
-        tools = agent_config_model.tools
-        model = agent_config_model.model
+
+        system_prompt = str(agent_config_model.system_prompt)
+        tools = list(agent_config_model.tools) if agent_config_model.tools else []
+        model = str(agent_config_model.model)
         preset_name = f"custom:{agent_config_model.name}"
     else:
-        if request.preset not in PRESETS:
+        preset = str(request.preset)
+        if preset not in PRESETS:
             raise HTTPException(status_code=400, detail=f"Invalid preset. Available: {list(PRESETS.keys())}")
-        
-        model = request.model
-        preset_name = request.preset
+
+        model = str(request.model)
+        preset_name = preset
 
     # Handle threading
+    thread: Thread | None = None
     if request.thread_id:
-        query = db.query(Thread).filter(Thread.id == request.thread_id)
+        thread_query = db.query(Thread).filter(Thread.id == request.thread_id)
         if api_key.id != "master":
-            query = query.filter(Thread.owner_id == api_key.id)
-            
-        thread = query.first()
+            thread_query = thread_query.filter(Thread.owner_id == api_key.id)
+
+        thread = thread_query.first()
         if not thread:
             raise HTTPException(status_code=404, detail=f"Thread {request.thread_id} not found")
-        
+
         # Verify thread configuration matches incoming run
         if (
             thread.preset != preset_name
@@ -337,19 +357,19 @@ async def run_agent_stream_service(
         checkpointer = get_checkpointer()
 
         # Load additional MCP tools if requested
-        mcp_tools = []
+        mcp_tools: list[BaseTool] = []
         if request.mcp_server_ids:
             for server_id in request.mcp_server_ids:
-                query = db.query(MCPServerConfig).filter(
+                mcp_query = db.query(MCPServerConfig).filter(
                     MCPServerConfig.id == server_id,
                     MCPServerConfig.is_active.is_(True)
                 )
                 if api_key.id != "master":
-                    query = query.filter(MCPServerConfig.owner_id == api_key.id)
-                    
-                server_config = query.first()
+                    mcp_query = mcp_query.filter(MCPServerConfig.owner_id == api_key.id)
+
+                server_config = mcp_query.first()
                 if server_config:
-                    config_dict = {
+                    config_dict: dict[str, object] = {
                         "name": server_config.name,
                         "transport": server_config.transport,
                         "url": server_config.url,
@@ -361,8 +381,9 @@ async def run_agent_stream_service(
                     mcp_tools.extend(tools_from_server)
 
         # Build or get cached agent
+        agent: CompiledGraph
         if request.agent_id:
-            combined_tools = tools + mcp_tools
+            combined_tools: list[str | BaseTool] = list(tools) + list(mcp_tools)
             agent = await run_in_threadpool(
                 build_agent,
                 tools=combined_tools,
@@ -372,13 +393,13 @@ async def run_agent_stream_service(
             )
         else:
             agent = await _get_agent(
-                request.preset,
+                preset_name,
                 model, 
                 checkpointer,
                 extra_tools=mcp_tools
             )
         
-        lg_config = {"configurable": {"thread_id": thread.id}}
+        lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}
         full_answer = ""
         
         async for event in agent.astream_events(
@@ -395,7 +416,7 @@ async def run_agent_stream_service(
                     elif isinstance(chunk, list):
                         for part in chunk:
                             if isinstance(part, dict) and part.get("type") == "text":
-                                full_answer += part.get("text", "")
+                                full_answer += str(part.get("text", ""))
                             elif isinstance(part, str):
                                 full_answer += part          
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
@@ -416,8 +437,9 @@ async def run_agent_stream_service(
 
         yield f"data: {json.dumps({'type': 'done', 'thread_id': thread.id})}\n\n"
         yield "data: [DONE]\n\n"
-    except Exception as e:  
-        logger.exception(f"Error in streaming agent")
+    except Exception:  
+        logger.exception("Error in streaming agent")
         yield f"data: {json.dumps({'type': 'error', 'content': 'Stream failed'})}\n\n"
         yield f"data: {json.dumps({'type': 'done', 'thread_id': thread.id})}\n\n"
         yield "data: [DONE]\n\n"
+

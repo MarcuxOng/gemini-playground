@@ -17,15 +17,16 @@ Each tool should import `register` from this module and use it as a decorator.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
-_REGISTRY: dict[str, dict] = {}  # name → {fn, schema}
+_REGISTRY: dict[str, dict[str, Any]] = {}  # name → {fn, schema}
 
 
-def _python_type_to_json(annotation) -> dict:
+def _python_type_to_json(annotation: Any) -> dict[str, Any]:
     """Convert a Python type annotation to a JSON Schema type dict."""
-    mapping = {
+    mapping: dict[Any, dict[str, Any]] = {
         int: {"type": "integer"},
         float: {"type": "number"},
         str: {"type": "string"},
@@ -34,7 +35,7 @@ def _python_type_to_json(annotation) -> dict:
     return mapping.get(annotation, {"type": "string"})
 
 
-def register(fn: Callable) -> Callable:
+def register(fn: Callable[..., Any]) -> Callable[..., Any]:
     """
     Decorator that adds a function to the tool registry.
 
@@ -86,7 +87,7 @@ def register(fn: Callable) -> Callable:
     return fn
 
 
-def get_tools(name: str | None = None) -> list[dict] | dict | None:
+def get_tools(name: str | None = None) -> list[dict[str, Any]] | dict[str, Any] | None:
     """
     Return tool schemas for passing to an LLM provider.
 
@@ -100,7 +101,7 @@ def get_tools(name: str | None = None) -> list[dict] | dict | None:
     return [entry["schema"] for entry in _REGISTRY.values()]
 
 
-def call_tool(name: str, **kwargs) -> Any:
+def call_tool(name: str, **kwargs: Any) -> Any:
     """Execute a registered tool by name with the given keyword arguments."""
     entry = _REGISTRY.get(name)
     if not entry:
@@ -109,6 +110,6 @@ def call_tool(name: str, **kwargs) -> Any:
 
 
 # Import submodules to trigger registration decorators
-from app.tools.finance import finance_tools
-from app.tools.system import system_tools
-from app.tools.web import web_tools
+from app.tools.finance import finance_tools # noqa: E402, F401
+from app.tools.system import system_tools # noqa: E402, F401
+from app.tools.web import web_tools # noqa: E402, F401

@@ -2,6 +2,8 @@
 Web Scraper tool — fetches and extracts text from URLs.
 """
 
+from __future__ import annotations
+
 import logging
 import requests
 import socket
@@ -29,12 +31,12 @@ def is_safe_url(url: str) -> bool:
         # Resolve hostname with socket.getaddrinfo to cover all records (IPv4/IPv6)
         try:
             addr_info = socket.getaddrinfo(hostname, None)
-        except (socket.gaierror, socket.error):
+        except (OSError, socket.gaierror):
             # Handle specific DNS resolution errors
             return False
 
         for family, _, _, _, sockaddr in addr_info:
-            ip_address = sockaddr[0]
+            ip_address = str(sockaddr[0])
             
             if family == socket.AF_INET:
                 # IPv4 validation

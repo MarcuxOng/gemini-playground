@@ -1,6 +1,9 @@
 """
 Crypto Tool - A tool for fetching cryptocurrency prices using the CoinGecko API.
 """
+
+from __future__ import annotations
+
 import logging
 import requests
 
@@ -22,7 +25,7 @@ def find_crypto_id(query: str) -> str | None:
         data = response.json()        
         coins = data.get("coins", [])
         if coins:
-            return coins[0].get("id")
+            return str(coins[0].get("id")) if coins[0].get("id") else None
         return None
     
     except requests.exceptions.RequestException as e:
