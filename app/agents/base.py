@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from langchain_core.tools import BaseTool, StructuredTool
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from app.services.llm import build_llm
 from app.tools import get_registry
@@ -92,10 +92,10 @@ def build_agent(
         # Ensure all tools are converted to LangChain BaseTool objects
         processed_tools = project_tools_to_langchain(tools)
 
-        agent = create_react_agent(
+        agent = create_agent(
             model=build_llm(model),
             tools=processed_tools,
-            prompt=system_prompt,
+            system_prompt=system_prompt,
             checkpointer=checkpointer,
         )
         return agent
