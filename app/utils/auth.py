@@ -7,7 +7,7 @@ import secrets
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.config import Settings, get_settings
+from app.config import Settings, get_settings, settings
 from app.database.db import get_db
 from app.database.models import APIKey
 
@@ -19,7 +19,7 @@ def hash_api_key(api_key: str) -> str:
     return hashlib.sha256(api_key.encode()).hexdigest()
 
 
-def check_api_key(api_key: str, db: Session, settings: Settings = Depends(get_settings)) -> bool:
+def check_api_key(api_key: str, db: Session) -> bool:
     """
     Synchronous check for API key validity.
     Checks against both the master key and the database.
