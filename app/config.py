@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     master_api_key: str
 
     # Redis for rate limiting (optional)
-    redis_url: str
+    redis_url: str | None = None
 
     # Gemini API keys
     gemini_api_key: str
