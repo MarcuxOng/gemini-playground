@@ -4,7 +4,7 @@ import hashlib
 import logging
 import secrets
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings, settings
@@ -38,6 +38,7 @@ def check_api_key(api_key: str, db: Session) -> bool:
 
 
 async def verify_api_key(
+    request: Request,
     x_api_key: str = Header(...),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -48,6 +49,7 @@ async def verify_api_key(
     """
     # 1. Check Master Key
     if settings.master_api_key and secrets.compare_digest(x_api_key, settings.master_api_key):
+        request.state.api_key_id = "master"
         return APIKey(id="master", name="Master Key")
 
     # 2. Check Database Keys
@@ -64,11 +66,12 @@ async def verify_api_key(
             headers={"WWW-Authenticate": "X-API-Key"},
         )
 
+    request.state.api_key_id = api_key_record.id
     return api_key_record
 
 
 async def verify_master_key(
-    x_api_key: str = Header(...), settings: Settings = Depends(get_settings)
+    request: Request, x_api_key: str = Header(...), settings: Settings = Depends(get_settings)
 ) -> None:
     """
     Dependency that only allows requests using the MASTER_API_KEY.
@@ -81,3 +84,5 @@ async def verify_master_key(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: Administrative privileges required.",
         )
+
+    request.state.api_key_id = "master"
