@@ -14,6 +14,7 @@ from app.routers import all_routers
 from app.utils.exceptions import http_exception_handler, unhandled_exception_handler
 from app.utils.limiter import limiter
 from app.utils.logging import setup_logging
+from app.utils.middleware import UsageLoggingMiddleware
 from app.utils.response import APIResponse
 
 # Setup logging before FastAPI instance
@@ -29,8 +30,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, Any]:
 
 app = FastAPI(title="AI/LLM Playground", description="", version="1.0.0", lifespan=lifespan)
 
-# Add MCP middleware
+# Add middlewares
 app.add_middleware(MCPAuthMiddleware)
+app.add_middleware(UsageLoggingMiddleware)
 
 # Register custom exception handlers
 app.state.limiter = limiter
