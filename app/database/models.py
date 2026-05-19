@@ -95,3 +95,20 @@ class MCPServerConfig(Base):
     env = Column(JSON, nullable=True)  # env vars for stdio servers
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class EvalDataset(Base):
+    __tablename__ = "playground_v1_eval_datasets"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False, unique=True)
+    cases = Column(JSON, nullable=False)  # [{input, expected, ...}]
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class EvalRun(Base):
+    __tablename__ = "playground_v1_eval_runs"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    dataset_id = Column(String, ForeignKey("playground_v1_eval_datasets.id"))
+    agent_id = Column(String, nullable=False)  # preset name or custom agent UUID
+    metrics = Column(JSON, nullable=False)  # {passed: int, failed: int, total: int, results: [...]}
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
