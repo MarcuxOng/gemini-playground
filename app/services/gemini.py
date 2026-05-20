@@ -54,7 +54,9 @@ def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> l
                 query = query.filter(UploadedFile.owner_id == owner_id)
             file_rec = query.first()
             if file_rec:
-                resolved.append({"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)})
+                resolved.append(
+                    {"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)}
+                )
         elif att.startswith("https://") or att.startswith("gs://"):
             mime_type, _ = mimetypes.guess_type(att)
             resolved.append({"uri": att, "mime_type": mime_type or "application/octet-stream"})
