@@ -76,6 +76,7 @@ def build_agent(
     system_prompt: str,
     model: str,
     checkpointer: Any = None,
+    native_tools: list[str] | None = None,
 ) -> CompiledGraph:
     """
     Build and return a compiled LangGraph ReAct agent.
@@ -84,6 +85,8 @@ def build_agent(
         tools:         List of LangChain tools AND/OR project tool names.
         system_prompt: System-level instruction injected at the start of every run.
         model:         Model name.
+        checkpointer:  Optional checkpointer for persistent state.
+        native_tools:  Optional list of Gemini native tools ('search', 'code', 'url').
 
     Returns:
         A compiled LangGraph CompiledGraph ready to invoke.
@@ -92,8 +95,23 @@ def build_agent(
         # Ensure all tools are converted to LangChain BaseTool objects
         processed_tools = project_tools_to_langchain(tools)
 
+        # Build LLM and bind native tools if requested
+        llm = build_llm(model)
+
+        # Bind native tools if requested
+        if native_tools:
+            lc_native_tools = []
+            if "search" in native_tools:
+                lc_native_tools.append({"google_search_retrieval": {}})
+            if "code" in native_tools:
+                # Code execution is handled differently in LangChain usually, but for Gemini it can be a tool.
+                lc_native_tools.append({"code_execution": {}})
+
+            if lc_native_tools:
+                llm = llm.bind(tools=lc_native_tools)
+
         agent = create_agent(
-            model=build_llm(model),
+            model=llm,
             tools=processed_tools,
             system_prompt=system_prompt,
             checkpointer=checkpointer,
