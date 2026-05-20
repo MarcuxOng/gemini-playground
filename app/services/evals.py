@@ -54,6 +54,7 @@ async def run_eval(
     for case in cases:
         user_input = case["input"]
         expected_output = case["expected"]
+        attachments = case.get("attachments", [])
 
         # Run the agent
         # We create a mock APIKey object to satisfy the service signature if needed, but here we just need to pass the ID.
@@ -68,6 +69,7 @@ async def run_eval(
             agent_id=agent_id_or_preset
             if agent_id_or_preset not in ["research", "coder", "analyst", "knowledge"]
             else None,
+            attachments=attachments,
         )
 
         try:
