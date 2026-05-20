@@ -86,6 +86,21 @@ def delete_file_from_gemini(gemini_file_name: str) -> None:
         raise
 
 
+def build_native_tools(
+    grounding: bool = False,
+    code_exec: bool = False,
+    url_context: bool = False,
+) -> list[types.Tool]:
+    """Build a list of native tools for the Gemini model."""
+    native_tools: list[types.Tool] = []
+    if grounding:
+        native_tools.append(types.Tool(google_search=types.GoogleSearch()))
+    if code_exec:
+        native_tools.append(types.Tool(code_execution=types.ToolCodeExecution()))
+    if url_context:
+        native_tools.append(types.Tool(url_context=types.UrlContext()))
+    return native_tools
+
 
 def gemini_service(
     model: str,
@@ -93,27 +108,58 @@ def gemini_service(
     attachments: list[str] | None = None,
     db: Session | None = None,
     owner_id: str | None = None,
+    native_tools: list[str] | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
-    Reaches for raw genai.Client only when attachments are present since LangChain's Files API integration is less direct.
+    Reaches for raw genai.Client only when attachments or native_tools are present since LangChain's Files API integration or native tools is less direct.
     """
     try:
-        if attachments and db and owner_id:
+        if (attachments and db and owner_id) or native_tools:
             logger.info(
-                f"Generating content with attachments using raw client: {model}"
+                f"Generating content with attachments/native_tools using raw client: {model}"
             )
             contents: list[Any] = []
-            resolved = resolve_attachments(attachments, db, owner_id)
-            for att in resolved:
-                contents.append(
-                    types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"])
-                )
+            if attachments and db and owner_id:
+                resolved = resolve_attachments(attachments, db, owner_id)
+                for att in resolved:
+                    contents.append(
+                        types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"])
+                    )
             contents.append(prompt)
 
+            tools_config = None
+            if native_tools:
+                grounding = "search" in native_tools
+                code_exec = "code" in native_tools
+                url_context = "url" in native_tools
+                tools_config = build_native_tools(
+                    grounding=grounding, code_exec=code_exec, url_context=url_context
+                )
+
+            config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
+
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
-            response = client.models.generate_content(model=model, contents=contents)
-            return str(response.text or "")
+            response = client.models.generate_content(model=model, contents=contents, config=config)
+            text = str(response.text or "")
+
+            # Format and append grounding sources if search was enabled and sources found
+            candidate = response.candidates[0] if response.candidates else None
+            if candidate and getattr(candidate, "grounding_metadata", None):
+                meta = candidate.grounding_metadata
+                chunks = getattr(meta, "grounding_chunks", []) or []
+                sources: list[tuple[str, str]] = []
+                for chunk in chunks:
+                    if chunk.web:
+                        title = chunk.web.title or "Untitled"
+                        uri = chunk.web.uri or ""
+                        if uri and uri not in [s[1] for s in sources]:
+                            sources.append((title, uri))
+                if sources:
+                    text += "\n\n**Sources:**\n" + "\n".join(
+                        f"- [{title}]({uri})" for title, uri in sources
+                    )
+            return text
         else:
             logger.info(f"Generating content with Gemini model: {model}")
             llm = build_llm(model)
@@ -180,27 +226,59 @@ async def gemini_stream_service(
     attachments: list[str] | None = None,
     db: Session | None = None,
     owner_id: str | None = None,
+    native_tools: list[str] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     try:
         logger.info(f"Starting Gemini streaming generation with model: {model}")
         contents: Any = prompt
-        if attachments and db and owner_id:
+        if (attachments and db and owner_id) or native_tools:
             contents = []
-            resolved = resolve_attachments(attachments, db, owner_id)
-            for att in resolved:
-                contents.append(
-                    types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"])
-                )
+            if attachments and db and owner_id:
+                resolved = resolve_attachments(attachments, db, owner_id)
+                for att in resolved:
+                    contents.append(
+                        types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"])
+                    )
             contents.append(prompt)
+
+        tools_config = None
+        if native_tools:
+            grounding = "search" in native_tools
+            code_exec = "code" in native_tools
+            url_context = "url" in native_tools
+            tools_config = build_native_tools(
+                grounding=grounding, code_exec=code_exec, url_context=url_context
+            )
+
+        config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
 
         async with client.aio as async_client:
             response = await async_client.models.generate_content_stream(
-                model=model, contents=contents
+                model=model, contents=contents, config=config
             )
+            sources: list[tuple[str, str]] = []
             async for chunk in response:
                 if chunk.text:
                     yield chunk.text
+
+                # Check for grounding metadata in candidates
+                for candidate in getattr(chunk, "candidates", []) or []:
+                    if getattr(candidate, "grounding_metadata", None):
+                        meta = candidate.grounding_metadata
+                        chunks_list = getattr(meta, "grounding_chunks", []) or []
+                        for c in chunks_list:
+                            if c.web:
+                                title = c.web.title or "Untitled"
+                                uri = c.web.uri or ""
+                                if uri and uri not in [s[1] for s in sources]:
+                                    sources.append((title, uri))
+
+            if sources:
+                source_text = "\n\n**Sources:**\n" + "\n".join(
+                    f"- [{title}]({uri})" for title, uri in sources
+                )
+                yield source_text
     except Exception as e:
         logger.error(f"Error in Gemini streaming service: {e}")
         raise (e)

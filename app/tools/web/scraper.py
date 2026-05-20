@@ -82,6 +82,7 @@ def is_safe_url(url: str) -> bool:
         return False
 
 
+# DEPRECATED — prefer native_tools=["url"] in Phase 4.2
 @register
 def scrape_url(url: str, max_chars: int = 4000) -> str:
     """

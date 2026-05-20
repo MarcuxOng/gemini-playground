@@ -31,6 +31,7 @@ class ProviderInput(BaseModel):
     model: str
     prompt: str
     attachments: list[str] = []
+    native_tools: list[Literal["search", "code", "url"]] = []
 
 
 class StructuredInput(ProviderInput):
@@ -53,7 +54,7 @@ async def gemini(
     api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     logger.info(
-        f"Calling Gemini API with model: {body.model}, prompt: {body.prompt}, attachments: {body.attachments}"
+        f"Calling Gemini API with model: {body.model}, prompt: {body.prompt}, attachments: {body.attachments}, native_tools: {body.native_tools}"
     )
     response = await run_in_threadpool(
         gemini_service,
@@ -62,6 +63,7 @@ async def gemini(
         attachments=body.attachments,
         db=db,
         owner_id=api_key.id,
+        native_tools=body.native_tools,
     )
 
     return APIResponse(data=response)
@@ -90,7 +92,7 @@ async def gemini_stream(
     Stream Gemini response
     """
     logger.info(
-        f"Starting Gemini stream with model: {body.model}, prompt: {body.prompt}, attachments: {body.attachments}"
+        f"Starting Gemini stream with model: {body.model}, prompt: {body.prompt}, attachments: {body.attachments}, native_tools: {body.native_tools}"
     )
 
     async def event_generator() -> AsyncGenerator[str, None]:
@@ -101,6 +103,7 @@ async def gemini_stream(
                 attachments=body.attachments,
                 db=db,
                 owner_id=api_key.id,
+                native_tools=body.native_tools,
             ):
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'thread_id': None})}\n\n"

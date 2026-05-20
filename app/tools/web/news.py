@@ -14,6 +14,7 @@ from app.tools import register
 logger = logging.getLogger(__name__)
 
 
+# DEPRECATED — prefer native_tools=["search"] in Phase 4.2
 @register
 def get_news(query: str, page_size: int = 5, language: str = "en") -> str:
     """
