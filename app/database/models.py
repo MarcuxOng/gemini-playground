@@ -3,7 +3,17 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 
 from app.database.db import Base
@@ -111,4 +121,19 @@ class EvalRun(Base):
     dataset_id = Column(String, ForeignKey("playground_v1_eval_datasets.id"))
     agent_id = Column(String, nullable=False)  # preset name or custom agent UUID
     metrics = Column(JSON, nullable=False)  # {passed: int, failed: int, total: int, results: [...]}
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class UploadedFile(Base):
+    __tablename__ = "playground_v1_files"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    gemini_file_name = Column(String, nullable=False)  # e.g., "files/abc123xyz"
+    gemini_file_uri = Column(
+        String, nullable=False
+    )  # e.g., "https://generativelanguage.googleapis.com/..."
+    mime_type = Column(String, nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    display_name = Column(String, nullable=False)
+    owner_id = Column(String, ForeignKey("playground_v1_api_keys.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
