@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 from app.tools.web import (
-    news,
-    scraper,
+    search,
     weather,
     wikipedia,
     youtube,
 )
 
 web_tools = [
-    news,
+    search,
     weather,
     wikipedia,
-    scraper,
     youtube,
 ]
