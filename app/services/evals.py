@@ -7,8 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.database.models import EvalDataset, EvalRun
-from app.database.models import APIKey
+from app.database.models import APIKey, EvalDataset, EvalRun
 from app.services.agents import AgentRunRequest, run_agent_service
 from app.services.gemini import structured_service
 
@@ -33,10 +32,7 @@ Respond in JSON format:
 
 GRADER_SCHEMA = {
     "type": "object",
-    "properties": {
-        "passed": {"type": "boolean"}, 
-        "reason": {"type": "string"}
-    },
+    "properties": {"passed": {"type": "boolean"}, "reason": {"type": "string"}},
     "required": ["passed", "reason"],
 }
 
@@ -61,7 +57,7 @@ async def run_eval(
 
         # Run the agent
         # We create a mock APIKey object to satisfy the service signature if needed, but here we just need to pass the ID.
-        
+
         mock_api_key = APIKey(id=api_key_id)
         run_request = AgentRunRequest(
             prompt=user_input,

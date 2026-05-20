@@ -26,7 +26,7 @@ class UsageLoggingMiddleware(BaseHTTPMiddleware):
         model_name = "unknown"
         if request.method == "POST":
             try:
-                # We can't easily read the body here because it might be consumed by the route handler. 
+                # We can't easily read the body here because it might be consumed by the route handler.
                 # However, we can peek at it if needed, or rely on the route handler to attach info to the request state.
                 pass
             except Exception:
