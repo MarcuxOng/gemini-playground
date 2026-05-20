@@ -62,10 +62,16 @@ async def live_session_handler(
                             await session.send(input=data.get("content"), end_of_turn=True)
                         elif msg_type == "audio":
                             audio_bytes = base64.b64decode(data.get("data"))
-                            await session.send(input=types.Part.from_bytes(data=audio_bytes, mime_type="audio/pcm"))
+                            await session.send(
+                                input=types.Part.from_bytes(data=audio_bytes, mime_type="audio/pcm")
+                            )
                         elif msg_type == "video":
                             video_bytes = base64.b64decode(data.get("data"))
-                            await session.send(input=types.Part.from_bytes(data=video_bytes, mime_type="image/jpeg"))
+                            await session.send(
+                                input=types.Part.from_bytes(
+                                    data=video_bytes, mime_type="image/jpeg"
+                                )
+                            )
                         elif msg_type == "tool_response":
                             # Forward tool outputs back to Gemini
                             await session.send(
