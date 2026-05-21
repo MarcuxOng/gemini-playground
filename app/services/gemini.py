@@ -117,6 +117,8 @@ def gemini_service(
     Reaches for raw genai.Client only when attachments or native_tools are present since LangChain's Files API integration or native tools is less direct.
     """
     try:
+        if attachments and (not db or not owner_id):
+            raise ValueError("attachments require both db and owner_id to be provided")
         if (attachments and db and owner_id) or native_tools:
             logger.info(
                 f"Generating content with attachments/native_tools using raw client: {model}"
@@ -170,7 +172,7 @@ def gemini_service(
 
     except Exception as e:
         logger.error(f"Error generating Gemini content: {e}")
-        raise (e)
+        raise
 
 
 def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
@@ -197,7 +199,7 @@ def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[
 
     except Exception as e:
         logger.error(f"Error generating structured content: {e}")
-        raise (e)
+        raise
 
 
 def generate_thread_title(prompt: str, model: str = "gemini-1.5-flash") -> str:
@@ -232,6 +234,8 @@ async def gemini_stream_service(
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     try:
+        if attachments and (not db or not owner_id):
+            raise ValueError("attachments require both db and owner_id to be provided")
         logger.info(f"Starting Gemini streaming generation with model: {model}")
         contents: Any = prompt
         if (attachments and db and owner_id) or native_tools:
@@ -255,32 +259,32 @@ async def gemini_stream_service(
 
         config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
 
-        async with client.aio as async_client:
-            response = await async_client.models.generate_content_stream(
-                model=model, contents=contents, config=config
+        async_client = client.aio
+        response = await async_client.models.generate_content_stream(
+            model=model, contents=contents, config=config
+        )
+        sources: list[tuple[str, str]] = []
+        async for chunk in response:
+            if chunk.text:
+                yield chunk.text
+
+            # Check for grounding metadata in candidates
+            for candidate in getattr(chunk, "candidates", []) or []:
+                if getattr(candidate, "grounding_metadata", None):
+                    meta = candidate.grounding_metadata
+                    chunks_list = getattr(meta, "grounding_chunks", []) or []
+                    for c in chunks_list:
+                        if c.web:
+                            title = c.web.title or "Untitled"
+                            uri = c.web.uri or ""
+                            if uri and uri not in [s[1] for s in sources]:
+                                sources.append((title, uri))
+
+        if sources:
+            source_text = "\n\n**Sources:**\n" + "\n".join(
+                f"- [{title}]({uri})" for title, uri in sources
             )
-            sources: list[tuple[str, str]] = []
-            async for chunk in response:
-                if chunk.text:
-                    yield chunk.text
-
-                # Check for grounding metadata in candidates
-                for candidate in getattr(chunk, "candidates", []) or []:
-                    if getattr(candidate, "grounding_metadata", None):
-                        meta = candidate.grounding_metadata
-                        chunks_list = getattr(meta, "grounding_chunks", []) or []
-                        for c in chunks_list:
-                            if c.web:
-                                title = c.web.title or "Untitled"
-                                uri = c.web.uri or ""
-                                if uri and uri not in [s[1] for s in sources]:
-                                    sources.append((title, uri))
-
-            if sources:
-                source_text = "\n\n**Sources:**\n" + "\n".join(
-                    f"- [{title}]({uri})" for title, uri in sources
-                )
-                yield source_text
+            yield source_text
     except Exception as e:
         logger.error(f"Error in Gemini streaming service: {e}")
-        raise (e)
+        raise

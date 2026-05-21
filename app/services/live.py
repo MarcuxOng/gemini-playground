@@ -135,8 +135,19 @@ async def live_session_handler(
                 except Exception as e:
                     logger.error(f"Error receiving from Gemini: {e}")
 
-            # Run both loops
-            await asyncio.gather(send_to_gemini(), receive_from_gemini())
+            # Run both loops; cancel the sibling when either exits so the
+            # Live session context manager is properly torn down.
+            send_task = asyncio.create_task(send_to_gemini())
+            recv_task = asyncio.create_task(receive_from_gemini())
+            done, pending = await asyncio.wait(
+                {send_task, recv_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     except Exception as e:
         logger.error(f"Live session error: {e}")
