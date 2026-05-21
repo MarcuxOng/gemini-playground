@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
-from typing import Any
 
 from app.database.models import APIKey
 from app.services.rag import ingest_service, query_service

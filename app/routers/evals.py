@@ -62,7 +62,9 @@ async def start_eval(
     logger.info(
         f"Starting eval run for dataset {body.dataset_id} with agent {body.agent_id_or_preset}"
     )
-    result = await run_eval(db, body.dataset_id, body.agent_id_or_preset, body.model, str(api_key.id))
+    result = await run_eval(
+        db, body.dataset_id, body.agent_id_or_preset, body.model, str(api_key.id)
+    )
     return APIResponse(data=result)
 
 
