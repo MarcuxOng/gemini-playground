@@ -34,6 +34,8 @@ def get_checkpointer() -> Any:
             return _CHECKPOINTER
 
         db_url = settings.database_url
+        if db_url is None:
+            raise RuntimeError("DATABASE_URL is required to initialise the checkpointer")
         # Clean logging for security
         logged_url = db_url.split("@")[-1] if "@" in db_url else db_url
         logger.info(f"Initializing checkpointer with database: {logged_url}")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -62,8 +62,8 @@ async def gemini(
         prompt=body.prompt,
         attachments=body.attachments,
         db=db,
-        owner_id=api_key.id,
-        native_tools=body.native_tools,
+        owner_id=str(api_key.id),
+        native_tools=cast(list[str], body.native_tools),
     )
 
     return APIResponse(data=response)
@@ -102,8 +102,8 @@ async def gemini_stream(
                 body.prompt,
                 attachments=body.attachments,
                 db=db,
-                owner_id=api_key.id,
-                native_tools=body.native_tools,
+                owner_id=str(api_key.id),
+                native_tools=cast(list[str], body.native_tools),
             ):
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'thread_id': None})}\n\n"

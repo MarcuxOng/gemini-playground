@@ -50,7 +50,7 @@ async def live_session_handler(
             # 1. Forward WS messages to Gemini
             # 2. Forward Gemini responses to WS
 
-            async def send_to_gemini():
+            async def send_to_gemini() -> None:
                 try:
                     while True:
                         message = await websocket.receive_text()
@@ -61,21 +61,27 @@ async def live_session_handler(
                         if msg_type == "text":
                             await session.send(input=data.get("content"), end_of_turn=True)
                         elif msg_type == "audio":
-                            audio_bytes = base64.b64decode(data.get("data"))
-                            await session.send(
-                                input=types.Part.from_bytes(data=audio_bytes, mime_type="audio/pcm")
-                            )
-                        elif msg_type == "video":
-                            video_bytes = base64.b64decode(data.get("data"))
-                            await session.send(
-                                input=types.Part.from_bytes(
-                                    data=video_bytes, mime_type="image/jpeg"
+                            audio_content = data.get("data")
+                            if audio_content:
+                                audio_bytes = base64.b64decode(audio_content)
+                                await session.send(
+                                    input=types.Part.from_bytes(
+                                        data=audio_bytes, mime_type="audio/pcm"
+                                    )
                                 )
-                            )
+                        elif msg_type == "video":
+                            video_content = data.get("data")
+                            if video_content:
+                                video_bytes = base64.b64decode(video_content)
+                                await session.send(
+                                    input=types.Part.from_bytes(
+                                        data=video_bytes, mime_type="image/jpeg"
+                                    )
+                                )
                         elif msg_type == "tool_response":
                             # Forward tool outputs back to Gemini
                             await session.send(
-                                types.LiveClientToolResponse(
+                                input=types.LiveClientToolResponse(
                                     function_responses=[
                                         types.FunctionResponse(
                                             name=data.get("name"),
@@ -90,7 +96,7 @@ async def live_session_handler(
                 except Exception as e:
                     logger.error(f"Error sending to Gemini: {e}")
 
-            async def receive_from_gemini():
+            async def receive_from_gemini() -> None:
                 try:
                     async for message in session.receive():
                         # message is a types.LiveServerMessage
@@ -98,12 +104,12 @@ async def live_session_handler(
 
                         if message.server_content:
                             content = message.server_content.model_turn
-                            if content:
+                            if content and content.parts:
                                 for part in content.parts:
                                     if part.text:
                                         response_data = {"type": "text", "content": part.text}
                                         await websocket.send_text(json.dumps(response_data))
-                                    if part.inline_data:
+                                    if part.inline_data and part.inline_data.data:
                                         # Audio output
                                         audio_b64 = base64.b64encode(part.inline_data.data).decode(
                                             "utf-8"
@@ -115,7 +121,7 @@ async def live_session_handler(
                                         }
                                         await websocket.send_text(json.dumps(response_data))
 
-                        if message.tool_call:
+                        if message.tool_call and message.tool_call.function_calls:
                             # Forward tool calls to client
                             for call in message.tool_call.function_calls:
                                 response_data = {

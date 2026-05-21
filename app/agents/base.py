@@ -97,10 +97,11 @@ def build_agent(
 
         # Build LLM and bind native tools if requested
         llm = build_llm(model)
+        llm_with_tools: Any = llm
 
         # Bind native tools if requested
         if native_tools:
-            lc_native_tools = []
+            lc_native_tools: list[dict[str, Any]] = []
             if "search" in native_tools:
                 lc_native_tools.append({"google_search_retrieval": {}})
             if "code" in native_tools:
@@ -108,10 +109,10 @@ def build_agent(
                 lc_native_tools.append({"code_execution": {}})
 
             if lc_native_tools:
-                llm = llm.bind(tools=lc_native_tools)
+                llm_with_tools = llm.bind(tools=lc_native_tools)
 
         agent = create_agent(
-            model=llm,
+            model=llm_with_tools,
             tools=processed_tools,
             system_prompt=system_prompt,
             checkpointer=checkpointer,

@@ -7,7 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
 
-DATABASE_URL = settings.database_url
+DATABASE_URL: str = settings.database_url or "sqlite:///./app.db"
 
 # SQLite requires different arguments than PostgreSQL (Neon)
 if DATABASE_URL.startswith("sqlite"):

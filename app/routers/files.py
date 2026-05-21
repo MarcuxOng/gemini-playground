@@ -114,7 +114,7 @@ async def delete_file(
             raise HTTPException(status_code=404, detail="File not found or access denied.")
 
         # 1. Delete from Gemini Files API
-        await run_in_threadpool(delete_file_from_gemini, gemini_file_name=file_rec.gemini_file_name)
+        await run_in_threadpool(delete_file_from_gemini, gemini_file_name=str(file_rec.gemini_file_name))
 
         # 2. Delete from DB
         db.delete(file_rec)

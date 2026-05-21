@@ -36,6 +36,7 @@ def mock_gemini_client_global():
 def client():
     # Define test settings with dummy values
     test_settings = Settings(
+        database_url="sqlite:///./test.db",
         master_api_key="test-master-key",
         gemini_api_key="test-key",
         gcp_project_id="test-project",
