@@ -1,29 +1,42 @@
 import json
-import os
+from pathlib import Path
 from sqlalchemy.orm import Session
 from app.database.models import EvalDataset
 
 
 def handle_seed(db: Session) -> None:
     """Seed datasets from files to DB."""
-    datasets_dir = "eval/datasets"
-    if not os.path.exists(datasets_dir):
+    datasets_dir = Path(__file__).resolve().parent.parent / "datasets"
+    if not datasets_dir.exists():
         print(f"Directory {datasets_dir} does not exist.")
         return
 
-    for filename in os.listdir(datasets_dir):
-        if filename.endswith(".json"):
-            filepath = os.path.join(datasets_dir, filename)
-            name = os.path.splitext(filename)[0]
+    for filepath in datasets_dir.iterdir():
+        if filepath.suffix != ".json":
+            continue
+        name = filepath.stem
+        try:
             with open(filepath, encoding="utf-8") as f:
                 cases = json.load(f)
 
-            existing = db.query(EvalDataset).filter(EvalDataset.name == name).first()
-            if existing:
-                existing.cases = cases
-                print(f"Updated dataset: {name}")
+            if not isinstance(cases, list):
+                print(f"Skipping {name}: top-level value must be a list of cases")
+                continue
+
+            for i, case in enumerate(cases):
+                if not isinstance(case, dict) or "input" not in case or "expected" not in case:
+                    print(f"Skipping {name}: case {i} missing required keys 'input' or 'expected'")
+                    break
             else:
-                new_dataset = EvalDataset(name=name, cases=cases)
-                db.add(new_dataset)
-                print(f"Created dataset: {name}")
-    db.commit()
+                existing = db.query(EvalDataset).filter(EvalDataset.name == name).first()
+                if existing:
+                    existing.cases = cases  # type: ignore[assignment]
+                    print(f"Updated dataset: {name}")
+                else:
+                    db.add(EvalDataset(name=name, cases=cases))
+                    print(f"Created dataset: {name}")
+                db.commit()
+
+        except Exception as e:
+            db.rollback()
+            print(f"Error processing {name}: {e}")
