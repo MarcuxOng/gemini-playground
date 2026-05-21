@@ -76,7 +76,7 @@ async def upload_file(
 
     except Exception as e:
         logger.exception("Failed to upload file")
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="Upload failed") from e
 
 
 @router.get("/", response_model=APIResponse[list[FileResponse]])
@@ -94,7 +94,7 @@ async def list_files(
         return APIResponse(data=response_data)
     except Exception as e:
         logger.exception("Failed to list files")
-        raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="Failed to list files") from e
 
 
 @router.delete("/{file_id}", response_model=APIResponse[dict[str, str]])
@@ -113,18 +113,24 @@ async def delete_file(
         if not file_rec:
             raise HTTPException(status_code=404, detail="File not found or access denied.")
 
-        # 1. Delete from Gemini Files API
-        await run_in_threadpool(delete_file_from_gemini, gemini_file_name=str(file_rec.gemini_file_name))
-
-        # 2. Delete from DB
+        # Delete from DB first to avoid orphaned rows if commit fails
+        gemini_file_name = str(file_rec.gemini_file_name)
         db.delete(file_rec)
         db.commit()
 
-        logger.info(f"Deleted file record {file_id} (Gemini: {file_rec.gemini_file_name})")
+        # Delete from Gemini Files API (best-effort after DB commit)
+        try:
+            await run_in_threadpool(delete_file_from_gemini, gemini_file_name=gemini_file_name)
+        except Exception:
+            logger.exception(
+                f"Failed to delete Gemini file {gemini_file_name}; DB record already removed"
+            )
+
+        logger.info(f"Deleted file record {file_id} (Gemini: {gemini_file_name})")
         return APIResponse(data={"message": f"Successfully deleted file {file_id}"})
 
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to delete file {file_id}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="Failed to delete file") from e

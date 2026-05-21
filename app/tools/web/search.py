@@ -20,4 +20,4 @@ def google_search(query: str) -> str:
         return gemini_service(model="gemini-2.5-flash", prompt=query, native_tools=["search"])
     except Exception as e:
         logger.error(f"Error in google_search tool: {e}")
-        return f"Error performing search: {str(e)}"
+        return "Search failed"
