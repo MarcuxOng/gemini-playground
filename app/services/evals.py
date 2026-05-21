@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.agents.presets import KNOWN_PRESETS
 from app.database.models import APIKey, EvalDataset, EvalRun
 from app.services.agents import AgentRunRequest, run_agent_service
 from app.services.gemini import structured_service
@@ -52,9 +53,22 @@ async def run_eval(
     passed_count = 0
 
     for case in cases:
+        if not isinstance(case, dict) or "input" not in case or "expected" not in case:
+            results.append(
+                {
+                    "input": str(case),
+                    "expected": "",
+                    "actual": "ERROR",
+                    "passed": False,
+                    "reason": "Invalid case format: missing required keys 'input' or 'expected'",
+                }
+            )
+            continue
         user_input = case["input"]
         expected_output = case["expected"]
         attachments = case.get("attachments", [])
+        if not isinstance(attachments, list):
+            attachments = []
 
         # Run the agent
         # We create a mock APIKey object to satisfy the service signature if needed, but here we just need to pass the ID.
@@ -63,12 +77,8 @@ async def run_eval(
         run_request = AgentRunRequest(
             prompt=user_input,
             model=model,
-            preset=agent_id_or_preset
-            if agent_id_or_preset in ["research", "coder", "analyst", "knowledge"]
-            else None,
-            agent_id=agent_id_or_preset
-            if agent_id_or_preset not in ["research", "coder", "analyst", "knowledge"]
-            else None,
+            preset=agent_id_or_preset if agent_id_or_preset in KNOWN_PRESETS else None,
+            agent_id=agent_id_or_preset if agent_id_or_preset not in KNOWN_PRESETS else None,
             attachments=attachments,
         )
 
