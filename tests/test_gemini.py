@@ -16,7 +16,7 @@ def test_gemini_structured_returns_401_without_auth(client: TestClient):
         "/api/v1/gemini/structured",
         json={"model": "gemini-pro", "prompt": "hello", "response_schema": {"type": "object"}},
     )
-    assert response.status_code in [401, 422]
+    assert response.status_code == 401
 
 
 def test_gemini_structured_happy_path(client: TestClient, auth_headers, mock_gemini_client_global):
