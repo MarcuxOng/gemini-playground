@@ -5,6 +5,7 @@ from app.routers.auth import router as auth_router
 from app.routers.evals import router as evals_router
 from app.routers.files import router as files_router
 from app.routers.gemini import router as gemini_router
+from app.routers.imagen import router as imagen_router
 from app.routers.live import router as live_router
 from app.routers.mcp_server import router as mcp_server_router
 from app.routers.rag import router as rag_router
@@ -20,4 +21,5 @@ all_routers = [
     evals_router,
     files_router,
     live_router,
+    imagen_router,
 ]
