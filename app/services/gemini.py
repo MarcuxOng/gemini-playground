@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import io
+import json
 import logging
+import mimetypes
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from google import genai
 from google.genai import types
+from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.tools import call_tool, get_tools
+from app.config import build_genai_client
+from app.database.models import UploadedFile
+from app.services.llm import build_llm
 
 logger = logging.getLogger(__name__)
-client = genai.Client(api_key=settings.gemini_api_key)
+client = build_genai_client()
 
 
 def list_gemini_models() -> list[str]:
@@ -31,117 +36,254 @@ def list_gemini_models() -> list[str]:
         raise
 
 
-def gemini_service(model: str, prompt: str) -> str:
-    try:
-        logger.info(f"Generating content with Gemini model: {model}")
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction="You are a helpful assistant.",
-                temperature=0.2,
-                # thinking_config=types.ThinkingConfig(
-                #     thinking_level="high"
-                # ),
-            ),
-        )
+def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> list[dict[str, str]]:
+    """Resolves attachment IDs or URIs to file URIs and MIME types."""
+    resolved = []
+    for att in attachments:
+        is_uuid = False
+        try:
+            uuid.UUID(att)
+            is_uuid = True
+        except ValueError:
+            pass
 
-        return response.text or ""
+        if is_uuid:
+            query = db.query(UploadedFile).filter(UploadedFile.id == att)
+            if owner_id != "master":
+                query = query.filter(UploadedFile.owner_id == owner_id)
+            file_rec = query.first()
+            if file_rec:
+                resolved.append(
+                    {"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)}
+                )
+        elif att.startswith("https://") or att.startswith("gs://"):
+            mime_type, _ = mimetypes.guess_type(att)
+            resolved.append({"uri": att, "mime_type": mime_type or "application/octet-stream"})
+    return resolved
+
+
+def upload_file_to_gemini(file_content: bytes, display_name: str, mime_type: str) -> types.File:
+    """Uploads file content directly to Gemini Files API."""
+    try:
+        logger.info(f"Uploading file '{display_name}' ({mime_type}) to Gemini Files API")
+        file_io = io.BytesIO(file_content)
+        uploaded = client.files.upload(
+            file=file_io,
+            config=types.UploadFileConfig(display_name=display_name, mime_type=mime_type),
+        )
+        return uploaded
+    except Exception as e:
+        logger.error(f"Error uploading file to Gemini Files API: {e}")
+        raise
+
+
+def delete_file_from_gemini(gemini_file_name: str) -> None:
+    """Deletes file from Gemini Files API."""
+    try:
+        logger.info(f"Deleting file '{gemini_file_name}' from Gemini Files API")
+        client.files.delete(name=gemini_file_name)
+    except Exception as e:
+        logger.error(f"Error deleting file from Gemini Files API: {e}")
+        raise
+
+
+def build_native_tools(
+    grounding: bool = False,
+    code_exec: bool = False,
+    url_context: bool = False,
+) -> list[types.Tool]:
+    """Build a list of native tools for the Gemini model."""
+    native_tools: list[types.Tool] = []
+    if grounding:
+        native_tools.append(types.Tool(google_search=types.GoogleSearch()))
+    if code_exec:
+        native_tools.append(types.Tool(code_execution=types.ToolCodeExecution()))
+    if url_context:
+        native_tools.append(types.Tool(url_context=types.UrlContext()))
+    return native_tools
+
+
+def gemini_service(
+    model: str,
+    prompt: str,
+    attachments: list[str] | None = None,
+    db: Session | None = None,
+    owner_id: str | None = None,
+    native_tools: list[str] | None = None,
+) -> str:
+    """
+    Generation service consolidated on the LangChain path.
+    Reaches for raw genai.Client only when attachments or native_tools are present since LangChain's Files API integration or native tools is less direct.
+    """
+    try:
+        if attachments and (not db or not owner_id):
+            raise ValueError("attachments require both db and owner_id to be provided")
+        if (attachments and db and owner_id) or native_tools:
+            logger.info(
+                f"Generating content with attachments/native_tools using raw client: {model}"
+            )
+            contents: list[Any] = []
+            if attachments and db and owner_id:
+                resolved = resolve_attachments(attachments, db, owner_id)
+                for att in resolved:
+                    contents.append(
+                        types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"])
+                    )
+            contents.append(prompt)
+
+            tools_config = None
+            if native_tools:
+                grounding = "search" in native_tools
+                code_exec = "code" in native_tools
+                url_context = "url" in native_tools
+                tools_config = build_native_tools(
+                    grounding=grounding, code_exec=code_exec, url_context=url_context
+                )
+
+            config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
+
+            # Reach for raw genai.Client for capabilities LangChain doesn't wrap
+            response = client.models.generate_content(model=model, contents=contents, config=config)
+            text = str(response.text or "")
+
+            # Format and append grounding sources if search was enabled and sources found
+            candidate = response.candidates[0] if response.candidates else None
+            if candidate and getattr(candidate, "grounding_metadata", None):
+                meta = candidate.grounding_metadata
+                chunks = getattr(meta, "grounding_chunks", []) or []
+                sources: list[tuple[str, str]] = []
+                for chunk in chunks:
+                    if chunk.web:
+                        title = chunk.web.title or "Untitled"
+                        uri = chunk.web.uri or ""
+                        if uri and uri not in [s[1] for s in sources]:
+                            sources.append((title, uri))
+                if sources:
+                    text += "\n\n**Sources:**\n" + "\n".join(
+                        f"- [{title}]({uri})" for title, uri in sources
+                    )
+            return text
+        else:
+            logger.info(f"Generating content with Gemini model: {model}")
+            llm = build_llm(model)
+            llm_response = llm.invoke(prompt)
+            return str(llm_response.content)
 
     except Exception as e:
         logger.error(f"Error generating Gemini content: {e}")
         raise
 
 
-def tools_service(model: str, prompt: str) -> str:
+def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
     """
-    Generate content using Gemini with tool calling support using ChatSession.
+    Structured output service using raw genai.Client.
+    Returns guaranteed-valid JSON matching the provided schema.
     """
     try:
-        logger.info(f"Starting tool-enabled chat with Gemini model: {model}")
-
-        # Prepare tools from the registry
-        raw_schemas = get_tools()
-        tool_schemas: list[dict[str, Any]] = raw_schemas if isinstance(raw_schemas, list) else []
-        gemini_tools: list[types.Tool] = []
-        if tool_schemas:
-            function_declarations = [
-                types.FunctionDeclaration(
-                    name=ts["function"]["name"],
-                    description=ts["function"]["description"],
-                    parameters=ts["function"]["parameters"],
-                )
-                for ts in tool_schemas
-            ]
-            gemini_tools = [types.Tool(function_declarations=function_declarations)]
-
-        # Initialize ChatSession (handles history automatically)
-        chat = client.chats.create(
+        logger.info(f"Generating structured content with Gemini model: {model}")
+        response = client.models.generate_content(
             model=model,
+            contents=prompt,
             config=types.GenerateContentConfig(
-                tools=gemini_tools,  # type: ignore[arg-type]
-                system_instruction="You are a helpful assistant that uses tools when necessary.",
-                temperature=0.1,
+                response_mime_type="application/json",
+                response_schema=schema,
             ),
         )
 
-        # Tool Loop: Handle multi-turn tool calls robustly
-        response = chat.send_message(prompt)
-        for _ in range(10):
-            # Extract all tool calls from the current response
-            tool_calls = []
-            if response.candidates:
-                for candidate in response.candidates:
-                    if candidate.content and candidate.content.parts:
-                        for part in candidate.content.parts:
-                            if part.function_call:
-                                tool_calls.append(part.function_call)
+        if not response.text:
+            raise ValueError("Gemini returned an empty response")
 
-            if not tool_calls:
-                return response.text or ""
-
-            # Execute all tool calls in parallel (sequentially in this loop)
-            tool_responses: list[types.Part] = []
-            for call in tool_calls:
-                logger.info("Executing tool: %s", call.name)
-                try:
-                    # Map result to a FunctionResponse Part
-                    args = call.args or {}
-                    result = call_tool(call.name or "", **args)
-                    tool_responses.append(
-                        types.Part(
-                            function_response=types.FunctionResponse(
-                                name=call.name, response={"result": result}
-                            )
-                        )
-                    )
-                except Exception as e:
-                    logger.error(f"Tool execution failed: {call.name} -> {e}")
-                    tool_responses.append(
-                        types.Part(
-                            function_response=types.FunctionResponse(
-                                name=call.name, response={"error": str(e)}
-                            )
-                        )
-                    )
-            response = chat.send_message(tool_responses)
-        return "Error: Maximum tool-calling iterations reached."
+        # Parse the JSON string into a dict
+        return dict(json.loads(response.text))
 
     except Exception as e:
-        logger.error(f"Error in tools_service: {e}")
+        logger.error(f"Error generating structured content: {e}")
         raise
 
 
-async def gemini_stream_service(model: str, prompt: str) -> AsyncGenerator[str, None]:
+def generate_thread_title(prompt: str, model: str = "gemini-1.5-flash") -> str:
+    """
+    Generates a short (3-5 words) descriptive title for a thread based on the initial prompt.
+    """
     try:
+        logger.info("Generating thread title...")
+        # Use a concise internal prompt for title generation
+        title_prompt = (
+            f"Generate a concise, 3-5 word title for a conversation that starts with: '{prompt}'. "
+            "Respond ONLY with the title text, no quotes or punctuation."
+        )
+        llm = build_llm(model)
+        response = llm.invoke(title_prompt)
+        title = str(response.content).strip()
+        # Clean up any quotes if the model ignored instructions
+        return title.replace('"', "").replace("'", "")
+    except Exception as e:
+        logger.error(f"Error generating thread title: {e}")
+        # Fallback to a truncated version of the prompt if LLM fails
+        return prompt[:30] + "..." if len(prompt) > 30 else prompt
+
+
+async def gemini_stream_service(
+    model: str,
+    prompt: str,
+    attachments: list[str] | None = None,
+    db: Session | None = None,
+    owner_id: str | None = None,
+    native_tools: list[str] | None = None,
+) -> AsyncGenerator[str, None]:
+    """Streaming intentionally uses genai.Client.aio for native SSE support."""
+    try:
+        if attachments and (not db or not owner_id):
+            raise ValueError("attachments require both db and owner_id to be provided")
         logger.info(f"Starting Gemini streaming generation with model: {model}")
-        async with client.aio as async_client:
-            response = await async_client.models.generate_content_stream(
-                model=model, contents=prompt
+        contents: Any = prompt
+        if (attachments and db and owner_id) or native_tools:
+            contents = []
+            if attachments and db and owner_id:
+                resolved = resolve_attachments(attachments, db, owner_id)
+                for att in resolved:
+                    contents.append(
+                        types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"])
+                    )
+            contents.append(prompt)
+
+        tools_config = None
+        if native_tools:
+            grounding = "search" in native_tools
+            code_exec = "code" in native_tools
+            url_context = "url" in native_tools
+            tools_config = build_native_tools(
+                grounding=grounding, code_exec=code_exec, url_context=url_context
             )
-            async for chunk in response:
-                if chunk.text:
-                    yield chunk.text
+
+        config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
+
+        async_client = client.aio
+        response = await async_client.models.generate_content_stream(
+            model=model, contents=contents, config=config
+        )
+        sources: list[tuple[str, str]] = []
+        async for chunk in response:
+            if chunk.text:
+                yield chunk.text
+
+            # Check for grounding metadata in candidates
+            for candidate in getattr(chunk, "candidates", []) or []:
+                if getattr(candidate, "grounding_metadata", None):
+                    meta = candidate.grounding_metadata
+                    chunks_list = getattr(meta, "grounding_chunks", []) or []
+                    for c in chunks_list:
+                        if c.web:
+                            title = c.web.title or "Untitled"
+                            uri = c.web.uri or ""
+                            if uri and uri not in [s[1] for s in sources]:
+                                sources.append((title, uri))
+
+        if sources:
+            source_text = "\n\n**Sources:**\n" + "\n".join(
+                f"- [{title}]({uri})" for title, uri in sources
+            )
+            yield source_text
     except Exception as e:
         logger.error(f"Error in Gemini streaming service: {e}")
         raise

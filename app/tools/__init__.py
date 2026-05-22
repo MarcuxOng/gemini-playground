@@ -1,18 +1,4 @@
-"""
-Tools registry.
-
-Usage:
-    from app.tools import register, get_tools
-
-    @register
-    def my_tool(...): ...
-
-    tools = get_tools()          # list of tool dicts (OpenAI/Gemini schema)
-    tools = get_tools("my_tool") # fetch a specific tool by name
-
-Tools imports are at the bottom to avoid circular imports.
-Each tool should import `register` from this module and use it as a decorator.
-"""
+"""Tool registry. Use get_registry() / has_tool() / list_tool_names(). Don't import _registry directly."""
 
 from __future__ import annotations
 
@@ -20,7 +6,22 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
-_REGISTRY: dict[str, dict[str, Any]] = {}  # name → {fn, schema}
+_registry: dict[str, dict[str, Any]] = {}  # name → {fn, schema}
+
+
+def get_registry() -> dict[str, dict[str, Any]]:
+    """Return a copy of the internal registry."""
+    return _registry.copy()
+
+
+def has_tool(name: str) -> bool:
+    """Check if a tool is registered by name."""
+    return name in _registry
+
+
+def list_tool_names() -> list[str]:
+    """Return a list of all registered tool names."""
+    return list(_registry.keys())
 
 
 def _python_type_to_json(annotation: Any) -> dict[str, Any]:
@@ -82,7 +83,7 @@ def register(fn: Callable[..., Any]) -> Callable[..., Any]:
         },
     }
 
-    _REGISTRY[fn.__name__] = {"fn": fn, "schema": schema}
+    _registry[fn.__name__] = {"fn": fn, "schema": schema}
     return fn
 
 
@@ -95,16 +96,16 @@ def get_tools(name: str | None = None) -> list[dict[str, Any]] | dict[str, Any] 
               If omitted, return all schemas as a list.
     """
     if name:
-        entry = _REGISTRY.get(name)
+        entry = _registry.get(name)
         return entry["schema"] if entry else None
-    return [entry["schema"] for entry in _REGISTRY.values()]
+    return [entry["schema"] for entry in _registry.values()]
 
 
 def call_tool(name: str, **kwargs: Any) -> Any:
     """Execute a registered tool by name with the given keyword arguments."""
-    entry = _REGISTRY.get(name)
+    entry = _registry.get(name)
     if not entry:
-        raise KeyError(f"Tool '{name}' is not registered. Available: {list(_REGISTRY)}")
+        raise KeyError(f"Tool '{name}' is not registered. Available: {list(_registry)}")
     return entry["fn"](**kwargs)
 
 

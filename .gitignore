@@ -44,6 +44,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+eval/datasets/
 
 # IDEs
 .vscode/
@@ -88,10 +89,16 @@ pip-delete-this-directory.txt
 .DS_Store
 Thumbs.db
 
-# Project specific
-misc/
+#Gemini Files
 conductor/
 .gemini/
+.agents/
+*GEMINI.md
+*.geminiignore
+
+# Project specific
+misc/
+.claude/
 
 # mypy
 .mypy_cache/

@@ -30,7 +30,7 @@ class AgentConfig:
 
 def run_once(
     agent: Any,
-    question: str,
+    question: str | list[Any],
     config: AgentConfig | None = None,
     lg_config: dict[str, Any] | None = None,
 ) -> str:
@@ -47,12 +47,13 @@ def run_once(
         The agent's final response as a plain string.
     """
     try:
-        if not question or not question.strip():
+        if not question or (isinstance(question, str) and not question.strip()):
             raise ValueError("Question cannot be empty.")
 
         cfg = config or AgentConfig()
         if cfg.verbose:
-            _print_divider(cfg.name, question)
+            display_question = question if isinstance(question, str) else str(question)
+            _print_divider(cfg.name, display_question)
 
         try:
             result = agent.invoke({"messages": [("human", question)]}, config=lg_config)

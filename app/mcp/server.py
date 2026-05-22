@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from app.database.db import SessionLocal
-from app.tools import _REGISTRY
+from app.tools import get_registry
 from app.utils.auth import check_api_key
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
 def _register_all_tools() -> None:
     """Dynamically register every tool in the project registry with FastMCP."""
     failures: list[str] = []
-    for tool_name, entry in _REGISTRY.items():
+    for tool_name, entry in get_registry().items():
         fn = entry["fn"]
 
         try:

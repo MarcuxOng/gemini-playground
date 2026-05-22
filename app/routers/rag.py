@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from app.database.models import APIKey
 from app.services.rag import ingest_service, query_service
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
@@ -27,7 +29,9 @@ class QueryRequest(BaseModel):
 
 @router.post("/ingest", response_model=APIResponse)
 @limiter.limit("5/minute")
-async def ingest_documents(request: Request, body: IngestRequest) -> APIResponse:
+async def ingest_documents(
+    request: Request, body: IngestRequest, api_key: APIKey = Depends(verify_api_key)
+) -> APIResponse[Any]:
     """
     Ingest text into the Pinecone vector store.
     """
@@ -50,7 +54,9 @@ async def ingest_documents(request: Request, body: IngestRequest) -> APIResponse
 
 @router.post("/query", response_model=APIResponse)
 @limiter.limit("20/minute")
-async def query_rag(request: Request, body: QueryRequest) -> APIResponse:
+async def query_rag(
+    request: Request, body: QueryRequest, api_key: APIKey = Depends(verify_api_key)
+) -> APIResponse[Any]:
     """
     Query the RAG pipeline.
     """

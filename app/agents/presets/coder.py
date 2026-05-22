@@ -9,7 +9,6 @@ from typing import Any
 from langchain_core.tools import BaseTool
 
 from app.agents.base import build_agent, merge_tools
-from app.config import settings
 
 CompiledGraph = Any
 
@@ -18,14 +17,7 @@ CompiledGraph = Any
 SYSTEM_PROMPT = """
 You are a senior software engineer and coding assistant.
 You can write code in Python, JavaScript, Go, Rust, C++, and more.
-"""
 
-if settings.enable_execute_code:
-    SYSTEM_PROMPT += "\nYou can execute code when needed.\n"
-else:
-    SYSTEM_PROMPT += "\nCode execution is currently disabled.\n"
-
-SYSTEM_PROMPT += """
 Guidelines:
 - Write clean code with type hints.
 - Use comments to explain complex logic.
@@ -44,8 +36,7 @@ TOOLS = [
     "count_tokens",
 ]
 
-if settings.enable_execute_code:
-    TOOLS.insert(0, "execute_code")
+# Code execution will be added in Phase 4.2 via Gemini's native code_execution tool.
 
 
 def build_coder_agent(

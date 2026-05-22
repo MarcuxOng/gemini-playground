@@ -18,6 +18,7 @@ from app.agents import PRESETS, AgentConfig, build_agent, run_once
 from app.database.models import Agents, APIKey, MCPServerConfig, Thread, ThreadMessage
 from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
+from app.services.gemini import generate_thread_title, resolve_attachments
 
 CompiledGraph = Any
 
@@ -53,6 +54,7 @@ class AgentRunRequest(BaseModel):
     mcp_server_ids: list[str] | None = None  # external MCP servers to connect to
     prompt: str
     thread_id: str | None = None
+    attachments: list[str] = []
 
     @model_validator(mode="after")
     def check_source(self) -> AgentRunRequest:
@@ -158,11 +160,14 @@ async def run_agent_service(
                 status_code=400, detail="Thread belongs to a different agent configuration."
             )
     else:
+        # Generate title for new thread
+        title = await run_in_threadpool(generate_thread_title, request.prompt, model)
         thread = Thread(
             id=str(uuid.uuid4()),
             owner_id=api_key.id,
             preset=preset_name,
             model=model,
+            title=title,
         )
         db.add(thread)
         db.commit()
@@ -220,8 +225,17 @@ async def run_agent_service(
         )
 
         lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}
+        prompt_input: Any = request.prompt
+        if request.attachments:
+            resolved = resolve_attachments(request.attachments, db, str(api_key.id))
+            prompt_input = [{"type": "text", "text": request.prompt}]
+            for att in resolved:
+                prompt_input.append(
+                    {"type": "media", "file_uri": att["uri"], "mime_type": att["mime_type"]}
+                )
+
         answer = await run_in_threadpool(
-            run_once, agent, request.prompt, config=config, lg_config=lg_config
+            run_once, agent, prompt_input, config=config, lg_config=lg_config
         )
 
         # Save messages
@@ -299,11 +313,14 @@ async def run_agent_stream_service(
                 status_code=400, detail="Thread belongs to a different agent configuration."
             )
     else:
+        # Generate title for new thread
+        title = await run_in_threadpool(generate_thread_title, request.prompt, model)
         thread = Thread(
             id=str(uuid.uuid4()),
             owner_id=api_key.id,
             preset=preset_name,
             model=model,
+            title=title,
         )
         db.add(thread)
         db.commit()
@@ -360,10 +377,19 @@ async def run_agent_stream_service(
             agent = await _get_agent(preset_name, model, checkpointer, extra_tools=mcp_tools)
 
         lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}
+        prompt_input: Any = request.prompt
+        if request.attachments:
+            resolved = resolve_attachments(request.attachments, db, str(api_key.id))
+            prompt_input = [{"type": "text", "text": request.prompt}]
+            for att in resolved:
+                prompt_input.append(
+                    {"type": "media", "file_uri": att["uri"], "mime_type": att["mime_type"]}
+                )
+
         full_answer = ""
 
         async for event in agent.astream_events(
-            {"messages": [("human", request.prompt)]}, config=lg_config, version="v2"
+            {"messages": [("human", prompt_input)]}, config=lg_config, version="v2"
         ):
             kind = event["event"]
             if kind == "on_chat_model_stream":

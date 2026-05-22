@@ -18,7 +18,7 @@ from app.services.agents import (
     run_agent_service,
     run_agent_stream_service,
 )
-from app.tools import _REGISTRY
+from app.tools import get_registry, has_tool, list_tool_names
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
@@ -57,7 +57,7 @@ async def list_available_tools(api_key: APIKey = Depends(verify_api_key)) -> API
             "description": entry["schema"]["function"]["description"],
             "parameters": entry["schema"]["function"]["parameters"],
         }
-        for name, entry in _REGISTRY.items()
+        for name, entry in get_registry().items()
     ]
     return APIResponse(data=tools)
 
@@ -74,11 +74,9 @@ async def create_agent(
         raise HTTPException(403, detail="Master key cannot create agents directly.")
 
     # Validate requested tools exist in registry
-    unknown = [t for t in body.tools if t not in _REGISTRY]
+    unknown = [t for t in body.tools if not has_tool(t)]
     if unknown:
-        raise HTTPException(
-            400, detail=f"Unknown tools: {unknown}, Available: {list(_REGISTRY.keys())}"
-        )
+        raise HTTPException(400, detail=f"Unknown tools: {unknown}, Available: {list_tool_names()}")
 
     config = Agents(**body.model_dump(), owner_id=api_key.id)
     db.add(config)
@@ -107,10 +105,10 @@ async def update_agent_config(
 
     patch = body.model_dump(exclude_unset=True, exclude_none=True)
     if "tools" in patch:
-        unknown = [t for t in patch["tools"] if t not in _REGISTRY]
+        unknown = [t for t in patch["tools"] if not has_tool(t)]
         if unknown:
             raise HTTPException(
-                400, detail=f"Unknown tools: {unknown}, Available: {list(_REGISTRY.keys())}"
+                400, detail=f"Unknown tools: {unknown}, Available: {list_tool_names()}"
             )
 
     for field, value in patch.items():

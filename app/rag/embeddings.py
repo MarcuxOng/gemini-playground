@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from google import genai
 from langchain_core.embeddings import Embeddings
 
-from app.config import settings
+from app.config import build_genai_client, settings
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ class GeminiEmbeddings(Embeddings):
     """
 
     def __init__(self, model: str = settings.gemini_embedding_model):
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        self.client = build_genai_client()
         self.model = model
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:

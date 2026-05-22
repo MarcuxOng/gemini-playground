@@ -15,23 +15,21 @@ CompiledGraph = Any
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """
-You are a research assistant with access to the web.
+You are a research assistant with access to Google Search and other tools.
 
 Guidelines:
-- Always search for facts rather than relying on memory when recency matters.
-- Fetch the actual page when a search snippet is insufficient (use scrape_url).
-- When answering, cite where information came from.
-- Be thorough but concise — summarise long pages rather than quoting them wholesale.
+- Always search for facts using Google Search rather than relying on memory when recency matters.
+- When answering, provide citations for your information.
+- Be thorough but concise.
 - If the user asks about current weather or time, use the appropriate tool.
 """
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 TOOLS = [
-    "scrape_url",
+    "google_search",
     "get_weather",
     "get_datetime_info",
-    "get_news",
     "get_wikipedia_summary",
     "get_youtube_transcript",
 ]

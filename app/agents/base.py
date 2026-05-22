@@ -9,11 +9,11 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from langchain.agents import create_agent
 from langchain_core.tools import BaseTool, StructuredTool
-from langgraph.prebuilt import create_react_agent
 
 from app.services.llm import build_llm
-from app.tools import _REGISTRY
+from app.tools import get_registry
 
 CompiledGraph = Any
 
@@ -39,7 +39,7 @@ def project_tools_to_langchain(tools: Sequence[str | BaseTool]) -> list[BaseTool
             lc_tools.append(tool)
             continue
 
-        entry = _REGISTRY.get(tool)
+        entry = get_registry().get(tool)
         if not entry:
             missing_tools.append(tool)
             continue
@@ -76,6 +76,7 @@ def build_agent(
     system_prompt: str,
     model: str,
     checkpointer: Any = None,
+    native_tools: list[str] | None = None,
 ) -> CompiledGraph:
     """
     Build and return a compiled LangGraph ReAct agent.
@@ -84,6 +85,8 @@ def build_agent(
         tools:         List of LangChain tools AND/OR project tool names.
         system_prompt: System-level instruction injected at the start of every run.
         model:         Model name.
+        checkpointer:  Optional checkpointer for persistent state.
+        native_tools:  Optional list of Gemini native tools ('search', 'code', 'url').
 
     Returns:
         A compiled LangGraph CompiledGraph ready to invoke.
@@ -92,10 +95,26 @@ def build_agent(
         # Ensure all tools are converted to LangChain BaseTool objects
         processed_tools = project_tools_to_langchain(tools)
 
-        agent = create_react_agent(
-            model=build_llm(model),
+        # Build LLM and bind native tools if requested
+        llm = build_llm(model)
+        llm_with_tools: Any = llm
+
+        # Bind native tools if requested
+        if native_tools:
+            lc_native_tools: list[dict[str, Any]] = []
+            if "search" in native_tools:
+                lc_native_tools.append({"google_search_retrieval": {}})
+            if "code" in native_tools:
+                # Code execution is handled differently in LangChain usually, but for Gemini it can be a tool.
+                lc_native_tools.append({"code_execution": {}})
+
+            if lc_native_tools:
+                llm_with_tools = llm.bind(tools=lc_native_tools)
+
+        agent = create_agent(
+            model=llm_with_tools,
             tools=processed_tools,
-            prompt=system_prompt,
+            system_prompt=system_prompt,
             checkpointer=checkpointer,
         )
         return agent
