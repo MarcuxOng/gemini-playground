@@ -7,13 +7,12 @@ import logging
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
-from google import genai
 from google.genai import types
 
-from app.config import settings
+from app.config import build_genai_client
 
 logger = logging.getLogger(__name__)
-client = genai.Client(api_key=settings.gemini_api_key)
+client = build_genai_client()
 
 
 async def live_session_handler(

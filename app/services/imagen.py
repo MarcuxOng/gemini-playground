@@ -4,22 +4,21 @@ import logging
 import uuid
 from datetime import timedelta
 
-from google import genai
 from google.cloud import storage
 from google.genai import types
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.config import settings
+from app.config import build_genai_client, settings
 
 logger = logging.getLogger(__name__)
-client = genai.Client(api_key=settings.gemini_api_key)
+client = build_genai_client()
 
 
 def upload_to_gcs(data: bytes, filename: str, content_type: str = "image/png") -> str:
     """Uploads data to GCS and returns a signed URL if possible, or a public URL."""
     try:
-        if not settings.gcs_bucket_name:
-            logger.warning("GCS_BUCKET_NAME not set. Returning dummy URL.")
+        if not settings.gcs_bucket:
+            logger.warning("GCS_BUCKET not set. Returning dummy URL.")
             return f"https://placeholder.com/{filename}"
 
         try:
@@ -28,7 +27,7 @@ def upload_to_gcs(data: bytes, filename: str, content_type: str = "image/png") -
             logger.error(f"Failed to initialize GCS client (ADC issue?): {cred_err}")
             return f"https://error-placeholder.com/{filename}"
 
-        bucket = storage_client.bucket(settings.gcs_bucket_name)
+        bucket = storage_client.bucket(settings.gcs_bucket)
         blob = bucket.blob(f"imagen/{filename}")
         blob.upload_from_string(data, content_type=content_type)
 

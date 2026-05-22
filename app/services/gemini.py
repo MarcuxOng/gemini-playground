@@ -8,16 +8,15 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from google import genai
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import build_genai_client
 from app.database.models import UploadedFile
 from app.services.llm import build_llm
 
 logger = logging.getLogger(__name__)
-client = genai.Client(api_key=settings.gemini_api_key)
+client = build_genai_client()
 
 
 def list_gemini_models() -> list[str]:
