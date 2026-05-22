@@ -1,0 +1,32 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/ai-platform/app:$COMMIT_SHA', '.']
+
+  # Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/ai-platform/app:$COMMIT_SHA']
+
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'ai-platform'
+      - '--image'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/ai-platform/app:$COMMIT_SHA'
+      - '--region'
+      - 'asia-southeast1'
+      - '--platform'
+      - 'managed'
+      - '--service-account'
+      - 'ai-platform-sa@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=asia-southeast1,GCS_BUCKET=gemini-playground-bucket'
+      - '--set-secrets'
+      - 'MASTER_API_KEY=MASTER_API_KEY:latest,DATABASE_URL=DATABASE_URL:latest,PINECONE_API_KEY=PINECONE_API_KEY:latest,PINECONE_INDEX_NAME=PINECONE_INDEX_NAME:latest,PINECONE_NAMESPACE=PINECONE_NAMESPACE:latest,ALPHA_VANTAGE_API_KEY=ALPHA_VANTAGE_API_KEY:latest,OPENWEATHERMAP_API_KEY=OPENWEATHERMAP_API_KEY:latest,NEWS_API_KEY=NEWS_API_KEY:latest'
+
+images:
+  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/ai-platform/app:$COMMIT_SHA'
