@@ -98,6 +98,7 @@ conductor/
 
 # Project specific
 misc/
+.claude/
 
 # mypy
 .mypy_cache/
