@@ -15,7 +15,9 @@ from app.utils.limiter import limiter
 from app.utils.response import APIResponse
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/evals", tags=["Evals"], dependencies=[Depends(verify_master_key)])
+router = APIRouter(
+    prefix="/api/v1/evals", tags=["Evals"], dependencies=[Depends(verify_master_key)]
+)
 
 
 class DatasetCreate(BaseModel):
