@@ -80,7 +80,9 @@ async def upload_file(
 
 
 @router.get("/", response_model=APIResponse[list[FileResponse]])
+@limiter.limit("30/minute")
 async def list_files(
+    request: Request,
     db: Session = Depends(get_db),
     api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse[list[FileResponse]]:
@@ -98,7 +100,9 @@ async def list_files(
 
 
 @router.delete("/{file_id}", response_model=APIResponse[dict[str, str]])
+@limiter.limit("10/minute")
 async def delete_file(
+    request: Request,
     file_id: str,
     db: Session = Depends(get_db),
     api_key: APIKey = Depends(verify_api_key),

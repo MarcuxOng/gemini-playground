@@ -41,7 +41,8 @@ class StructuredInput(BaseModel):
 
 
 @router.get("/models", response_model=APIResponse)
-async def get_gemini_model() -> APIResponse:  # type: ignore[type-arg]
+@limiter.limit("30/minute")
+async def get_gemini_model(request: Request) -> APIResponse:  # type: ignore[type-arg]
     logger.info("Fetching available Gemini models")
     models = list_gemini_models()
     return APIResponse(data=models)

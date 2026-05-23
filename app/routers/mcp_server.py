@@ -42,8 +42,11 @@ class MCPServerResponse(BaseModel):
 
 
 @router.get("/", response_model=APIResponse[list[MCPServerResponse]])
+@limiter.limit("30/minute")
 async def list_mcp_servers(
-    db: Session = Depends(get_db), api_key: APIKey = Depends(verify_api_key)
+    request: Request,
+    db: Session = Depends(get_db),
+    api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse[list[MCPServerResponse]]:
     query = db.query(MCPServerConfig).filter(MCPServerConfig.is_active.is_(True))
     if api_key.id != "master":
