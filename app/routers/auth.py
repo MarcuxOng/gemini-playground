@@ -55,8 +55,11 @@ async def generate_key(
 
 
 @router.get("/keys", response_model=APIResponse[list[APIKeyResponse]])
+@limiter.limit("20/minute")
 async def list_keys(
-    db: Session = Depends(get_db), _: None = Depends(verify_master_key)
+    request: Request,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_master_key),
 ) -> APIResponse[list[APIKeyResponse]]:
     """List all registered API keys."""
     keys = db.query(APIKey).all()
@@ -64,8 +67,12 @@ async def list_keys(
 
 
 @router.delete("/keys/{key_id}", response_model=APIResponse)
+@limiter.limit("10/minute")
 async def revoke_key(
-    key_id: str, db: Session = Depends(get_db), _: None = Depends(verify_master_key)
+    request: Request,
+    key_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_master_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     """Revoke (deactivate) an existing API key."""
     api_key_record = db.query(APIKey).filter(APIKey.id == key_id).first()

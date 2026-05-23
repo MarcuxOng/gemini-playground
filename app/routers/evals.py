@@ -10,12 +10,14 @@ from sqlalchemy.orm import Session
 from app.database.db import get_db
 from app.database.models import APIKey, EvalDataset, EvalRun
 from app.services.evals import run_eval
-from app.utils.auth import verify_api_key
+from app.utils.auth import verify_api_key, verify_master_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/evals", tags=["Evals"], dependencies=[Depends(verify_api_key)])
+router = APIRouter(
+    prefix="/api/v1/evals", tags=["Evals"], dependencies=[Depends(verify_master_key)]
+)
 
 
 class DatasetCreate(BaseModel):
@@ -32,7 +34,10 @@ class EvalRunRequest(BaseModel):
 @router.post("/datasets", response_model=APIResponse)
 @limiter.limit("10/minute")
 async def create_dataset(
-    request: Request, body: DatasetCreate, db: Session = Depends(get_db)
+    request: Request,
+    body: DatasetCreate,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_master_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     existing = db.query(EvalDataset).filter(EvalDataset.name == body.name).first()
     if existing:
@@ -46,7 +51,8 @@ async def create_dataset(
 
 
 @router.get("/datasets", response_model=APIResponse)
-async def list_datasets(db: Session = Depends(get_db)) -> APIResponse:  # type: ignore[type-arg]
+@limiter.limit("30/minute")
+async def list_datasets(request: Request, db: Session = Depends(get_db)) -> APIResponse:  # type: ignore[type-arg]
     datasets = db.query(EvalDataset).all()
     return APIResponse(data=[{"id": d.id, "name": d.name} for d in datasets])
 
@@ -58,6 +64,7 @@ async def start_eval(
     body: EvalRunRequest,
     db: Session = Depends(get_db),
     api_key: APIKey = Depends(verify_api_key),
+    _: None = Depends(verify_master_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     logger.info(
         f"Starting eval run for dataset {body.dataset_id} with agent {body.agent_id_or_preset}"
@@ -69,7 +76,8 @@ async def start_eval(
 
 
 @router.get("/runs/{run_id}", response_model=APIResponse)
-async def get_eval_run(run_id: str, db: Session = Depends(get_db)) -> APIResponse:  # type: ignore[type-arg]
+@limiter.limit("30/minute")
+async def get_eval_run(request: Request, run_id: str, db: Session = Depends(get_db)) -> APIResponse:  # type: ignore[type-arg]
     eval_run = db.query(EvalRun).filter(EvalRun.id == run_id).first()
     if not eval_run:
         raise HTTPException(404, "Eval run not found.")

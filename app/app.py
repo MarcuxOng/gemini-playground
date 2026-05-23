@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, Any]:
     yield
 
 
-app = FastAPI(title="AI/LLM Playground", description="", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Gemini Playground", description="", version="1.0.0", lifespan=lifespan)
 
 # Add middlewares
 app.add_middleware(MCPAuthMiddleware)

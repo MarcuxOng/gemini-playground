@@ -99,6 +99,8 @@ conductor/
 # Project specific
 misc/
 .claude/
+*CLAUDE.md
+*AGENT.md
 
 # mypy
 .mypy_cache/

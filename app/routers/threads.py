@@ -1,20 +1,26 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
 from app.database.models import Thread
-from app.utils.auth import verify_api_key
+from app.utils.auth import verify_master_key
+from app.utils.limiter import limiter
 from app.utils.response import APIResponse
 
 router = APIRouter(
-    prefix="/api/v1/threads", tags=["Threads"], dependencies=[Depends(verify_api_key)]
+    prefix="/api/v1/threads", tags=["Threads"], dependencies=[Depends(verify_master_key)]
 )
 
 
 @router.get("/", response_model=APIResponse)
-async def list_threads(db: Session = Depends(get_db)) -> APIResponse:  # type: ignore[type-arg]
+@limiter.limit("30/minute")
+async def list_threads(
+    request: Request,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_master_key),
+) -> APIResponse:  # type: ignore[type-arg]
     threads = db.query(Thread).order_by(Thread.updated_at.desc()).all()
     return APIResponse(
         data=[
@@ -31,7 +37,13 @@ async def list_threads(db: Session = Depends(get_db)) -> APIResponse:  # type: i
 
 
 @router.get("/{thread_id}/messages", response_model=APIResponse)
-async def get_thread_messages(thread_id: str, db: Session = Depends(get_db)) -> APIResponse:  # type: ignore[type-arg]
+@limiter.limit("30/minute")
+async def get_thread_messages(
+    request: Request,
+    thread_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_master_key),
+) -> APIResponse:  # type: ignore[type-arg]
     thread = db.query(Thread).filter(Thread.id == thread_id).first()
     if not thread:
         raise HTTPException(404, "Thread not found.")
@@ -44,7 +56,13 @@ async def get_thread_messages(thread_id: str, db: Session = Depends(get_db)) -> 
 
 
 @router.delete("/{thread_id}", response_model=APIResponse)
-async def delete_thread(thread_id: str, db: Session = Depends(get_db)) -> APIResponse:  # type: ignore[type-arg]
+@limiter.limit("10/minute")
+async def delete_thread(
+    request: Request,
+    thread_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_master_key),
+) -> APIResponse:  # type: ignore[type-arg]
     thread = db.query(Thread).filter(Thread.id == thread_id).first()
     if not thread:
         raise HTTPException(404, "Thread not found.")

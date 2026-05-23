@@ -31,8 +31,11 @@ router = APIRouter(
 
 
 @router.get("/list", response_model=APIResponse[list[AgentResponse]])
+@limiter.limit("30/minute")
 async def list_agents(
-    db: Session = Depends(get_db), api_key: APIKey = Depends(verify_api_key)
+    request: Request,
+    db: Session = Depends(get_db),
+    api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse[list[AgentResponse]]:
     query = db.query(Agents).filter(Agents.is_active.is_(True))
     if api_key.id != "master":
@@ -43,13 +46,17 @@ async def list_agents(
 
 
 @router.get("/presets", response_model=APIResponse)
-async def get_presets(api_key: APIKey = Depends(verify_api_key)) -> APIResponse:  # type: ignore[type-arg]
+@limiter.limit("60/minute")
+async def get_presets(request: Request, api_key: APIKey = Depends(verify_api_key)) -> APIResponse:  # type: ignore[type-arg]
     """List available agent presets."""
     return APIResponse(data={"presets": list(PRESETS.keys())})
 
 
 @router.get("/tools", response_model=APIResponse)
-async def list_available_tools(api_key: APIKey = Depends(verify_api_key)) -> APIResponse:  # type: ignore[type-arg]
+@limiter.limit("60/minute")
+async def list_available_tools(
+    request: Request, api_key: APIKey = Depends(verify_api_key)
+) -> APIResponse:  # type: ignore[type-arg]
     """List all registered tools that can be assigned to an agent config."""
     tools = [
         {
