@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from app.services.imagen import edit_image_service, generate_image_service
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
+from app.utils.mime import validate_upload
 from app.utils.response import APIResponse
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,11 @@ async def edit_image(
         content = await file.read()
         if len(content) > 20 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
+        mime_type = file.content_type or "application/octet-stream"
+        try:
+            validate_upload(content, mime_type)
+        except ValueError as e:
+            raise HTTPException(status_code=415, detail=str(e)) from e
         urls = await run_in_threadpool(
             edit_image_service, prompt=prompt, base_image_bytes=content, model=model
         )
