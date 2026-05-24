@@ -51,7 +51,8 @@ async def upload_file(
         try:
             validate_upload(content, mime_type)
         except ValueError as e:
-            raise HTTPException(status_code=415, detail=str(e)) from e
+            detail = str(e)
+            raise HTTPException(status_code=415, detail=detail) from e
 
         # Upload to Gemini Files API
         uploaded = await run_in_threadpool(

@@ -37,7 +37,7 @@ async def generate_image(
         return APIResponse(data=ImageResponse(urls=urls))
     except Exception as e:
         logger.exception("Image generation failed")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="Image generation failed") from e
 
 
 @router.post("/edit", response_model=APIResponse[ImageResponse])
@@ -57,11 +57,12 @@ async def edit_image(
         try:
             validate_upload(content, mime_type)
         except ValueError as e:
-            raise HTTPException(status_code=415, detail=str(e)) from e
+            detail = str(e)
+            raise HTTPException(status_code=415, detail=detail) from e
         urls = await run_in_threadpool(
             edit_image_service, prompt=prompt, base_image_bytes=content, model=model
         )
         return APIResponse(data=ImageResponse(urls=urls))
     except Exception as e:
         logger.exception("Image editing failed")
-        raise HTTPException(status_code=500, detail=f"Editing failed: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="Image editing failed") from e

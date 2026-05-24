@@ -45,8 +45,9 @@ async def ingest_documents(
         )
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError:
+        logger.exception("Ingestion validation error")
+        raise HTTPException(status_code=400, detail="Invalid ingestion request.") from None
     except Exception as e:
         logger.exception("Ingestion API error")
         raise HTTPException(status_code=500, detail="Failed to ingest text.") from e
@@ -65,8 +66,9 @@ async def query_rag(
         return APIResponse(data={"query": body.query, "response": response})
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError:
+        logger.exception("RAG query validation error")
+        raise HTTPException(status_code=400, detail="Invalid query request.") from None
     except Exception as e:
         logger.exception("RAG query API error")
         raise HTTPException(status_code=500, detail="Failed to execute RAG query.") from e
