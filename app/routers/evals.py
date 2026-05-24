@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
@@ -21,7 +21,7 @@ router = APIRouter(
 
 
 class DatasetCreate(BaseModel):
-    name: str
+    name: str = Field(..., max_length=200)
     cases: list[dict[str, Any]]  # [{input, expected}]
 
 

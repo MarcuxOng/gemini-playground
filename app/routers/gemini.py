@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -29,14 +29,14 @@ router = APIRouter(prefix="/api/v1/gemini", tags=["Gemini"], dependencies=[Depen
 
 class ProviderInput(BaseModel):
     model: str
-    prompt: str
+    prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url"]] = []
 
 
 class StructuredInput(BaseModel):
     model: str
-    prompt: str
+    prompt: str = Field(..., max_length=32_000)
     response_schema: dict[str, Any]  # JSON Schema dict
 
 

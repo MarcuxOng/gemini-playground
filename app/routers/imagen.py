@@ -50,6 +50,8 @@ async def edit_image(
     """Edit an image based on a text prompt."""
     try:
         content = await file.read()
+        if len(content) > 20 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
         urls = await run_in_threadpool(
             edit_image_service, prompt=prompt, base_image_bytes=content, model=model
         )

@@ -42,6 +42,8 @@ async def upload_file(
     """Upload a file to the Gemini Files API and track it locally."""
     try:
         content = await file.read()
+        if len(content) > 20 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
         size_bytes = len(content)
         display_name = file.filename or "unknown"
         mime_type = file.content_type or "application/octet-stream"

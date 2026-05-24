@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.database.models import APIKey
@@ -18,13 +18,13 @@ router = APIRouter(prefix="/api/v1/rag", tags=["RAG"], dependencies=[Depends(ver
 
 
 class IngestRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=100_000)
 
 
 class QueryRequest(BaseModel):
     provider: str
     model: str
-    query: str
+    query: str = Field(..., max_length=4_000)
 
 
 @router.post("/ingest", response_model=APIResponse)

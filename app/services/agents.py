@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -52,7 +52,7 @@ class AgentRunRequest(BaseModel):
     preset: str | None = None  # hardcoded preset name
     agent_id: str | None = None  # DB-backed config id — takes priority
     mcp_server_ids: list[str] | None = None  # external MCP servers to connect to
-    prompt: str
+    prompt: str = Field(..., max_length=32_000)
     thread_id: str | None = None
     attachments: list[str] = []
 
