@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -55,6 +55,17 @@ class AgentRunRequest(BaseModel):
     prompt: str = Field(..., max_length=32_000)
     thread_id: str | None = None
     attachments: list[str] = []
+
+    @field_validator("attachments")
+    @classmethod
+    def validate_attachments(cls, v: list[str]) -> list[str]:
+        """Only DB-owned UUIDs are accepted as attachment references."""
+        for att in v:
+            try:
+                uuid.UUID(att)
+            except ValueError:
+                raise ValueError(f"Attachment must be a DB file UUID, got: {att!r}") from None
+        return v
 
     @model_validator(mode="after")
     def check_source(self) -> AgentRunRequest:

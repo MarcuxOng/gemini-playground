@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -27,11 +28,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/gemini", tags=["Gemini"], dependencies=[Depends(verify_api_key)])
 
 
+def _validate_attachment_ids(v: list[str]) -> list[str]:
+    """Only DB-owned UUIDs are accepted as attachment references."""
+    for att in v:
+        try:
+            uuid.UUID(att)
+        except ValueError:
+            raise ValueError(f"Attachment must be a DB file UUID, got: {att!r}") from None
+    return v
+
+
 class ProviderInput(BaseModel):
     model: str
     prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url"]] = []
+
+    @field_validator("attachments")
+    @classmethod
+    def validate_attachments(cls, v: list[str]) -> list[str]:
+        return _validate_attachment_ids(v)
 
 
 class StructuredInput(BaseModel):

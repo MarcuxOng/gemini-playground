@@ -3,8 +3,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import mimetypes
-import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -37,28 +35,23 @@ def list_gemini_models() -> list[str]:
 
 
 def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> list[dict[str, str]]:
-    """Resolves attachment IDs or URIs to file URIs and MIME types."""
+    """Resolves DB file UUIDs to Gemini file URIs and MIME types.
+
+    Only DB-owned UUIDs are accepted; raw URIs are rejected upstream by the
+    Pydantic validators on ProviderInput and AgentRunRequest.
+    """
     resolved = []
     for att in attachments:
-        is_uuid = False
-        try:
-            uuid.UUID(att)
-            is_uuid = True
-        except ValueError:
-            pass
-
-        if is_uuid:
-            query = db.query(UploadedFile).filter(UploadedFile.id == att)
-            if owner_id != "master":
-                query = query.filter(UploadedFile.owner_id == owner_id)
-            file_rec = query.first()
-            if file_rec:
-                resolved.append(
-                    {"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)}
-                )
-        elif att.startswith("https://") or att.startswith("gs://"):
-            mime_type, _ = mimetypes.guess_type(att)
-            resolved.append({"uri": att, "mime_type": mime_type or "application/octet-stream"})
+        query = db.query(UploadedFile).filter(UploadedFile.id == att)
+        if owner_id != "master":
+            query = query.filter(UploadedFile.owner_id == owner_id)
+        file_rec = query.first()
+        if file_rec:
+            resolved.append(
+                {"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)}
+            )
+        else:
+            logger.warning(f"Attachment {att!r} not found or not owned by {owner_id!r}; skipping")
     return resolved
 
 
