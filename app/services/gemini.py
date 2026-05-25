@@ -84,6 +84,7 @@ def build_native_tools(
     grounding: bool = False,
     code_exec: bool = False,
     url_context: bool = False,
+    location: bool = False,
 ) -> list[types.Tool]:
     """Build a list of native tools for the Gemini model."""
     native_tools: list[types.Tool] = []
@@ -93,6 +94,8 @@ def build_native_tools(
         native_tools.append(types.Tool(code_execution=types.ToolCodeExecution()))
     if url_context:
         native_tools.append(types.Tool(url_context=types.UrlContext()))
+    if location:
+        native_tools.append(types.Tool(google_maps=types.GoogleMaps()))
     return native_tools
 
 
@@ -129,8 +132,9 @@ def gemini_service(
                 grounding = "search" in native_tools
                 code_exec = "code" in native_tools
                 url_context = "url" in native_tools
+                location = "location" in native_tools
                 tools_config = build_native_tools(
-                    grounding=grounding, code_exec=code_exec, url_context=url_context
+                    grounding=grounding, code_exec=code_exec, url_context=url_context, location=location
                 )
 
             config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
@@ -245,8 +249,9 @@ async def gemini_stream_service(
             grounding = "search" in native_tools
             code_exec = "code" in native_tools
             url_context = "url" in native_tools
+            location = "location" in native_tools
             tools_config = build_native_tools(
-                grounding=grounding, code_exec=code_exec, url_context=url_context
+                grounding=grounding, code_exec=code_exec, url_context=url_context, location=location
             )
 
         config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
