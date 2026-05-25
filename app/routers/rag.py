@@ -12,6 +12,7 @@ from app.services.rag import ingest_service, query_service
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG"], dependencies=[Depends(verify_api_key)])
@@ -23,7 +24,7 @@ class IngestRequest(BaseModel):
 
 class QueryRequest(BaseModel):
     provider: str
-    model: str
+    model: ModelName
     query: str = Field(..., max_length=4_000)
 
 

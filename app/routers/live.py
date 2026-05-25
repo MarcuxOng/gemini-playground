@@ -13,6 +13,7 @@ from app.database.db import get_db
 from app.database.models import APIKey
 from app.services.live import live_session_handler
 from app.utils.auth import hash_api_key
+from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/live", tags=["Live"])
@@ -41,7 +42,7 @@ def verify_ws_api_key(db: Session, settings: Settings, api_key: str | None = Non
 @router.websocket("/ws")
 async def live_ws_endpoint(
     websocket: WebSocket,
-    model: str = Query("gemini-2.0-flash-exp"),
+    model: ModelName = Query("gemini-2.0-flash-exp"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> None:

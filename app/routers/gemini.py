@@ -23,6 +23,7 @@ from app.services.gemini import (
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/gemini", tags=["Gemini"], dependencies=[Depends(verify_api_key)])
@@ -39,7 +40,7 @@ def _validate_attachment_ids(v: list[str]) -> list[str]:
 
 
 class ProviderInput(BaseModel):
-    model: str
+    model: ModelName
     prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url"]] = []
@@ -51,7 +52,7 @@ class ProviderInput(BaseModel):
 
 
 class StructuredInput(BaseModel):
-    model: str
+    model: ModelName
     prompt: str = Field(..., max_length=32_000)
     response_schema: dict[str, Any]  # JSON Schema dict
 

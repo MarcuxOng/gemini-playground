@@ -19,6 +19,7 @@ from app.database.models import Agents, APIKey, MCPServerConfig, Thread, ThreadM
 from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
 from app.services.gemini import generate_thread_title, resolve_attachments
+from app.utils.validators import ModelName
 
 CompiledGraph = Any
 
@@ -30,7 +31,7 @@ class AgentCreate(BaseModel):
     description: str | None = None
     system_prompt: str
     tools: list[str]
-    model: str
+    model: ModelName
 
 
 class AgentResponse(BaseModel):
@@ -48,7 +49,7 @@ class AgentResponse(BaseModel):
 
 
 class AgentRunRequest(BaseModel):
-    model: str | None = None
+    model: ModelName | None = None
     preset: str | None = None  # hardcoded preset name
     agent_id: str | None = None  # DB-backed config id — takes priority
     mcp_server_ids: list[str] | None = None  # external MCP servers to connect to
@@ -88,7 +89,7 @@ class AgentUpdate(BaseModel):
     description: str | None = None
     system_prompt: str | None = None
     tools: list[str] | None = None
-    model: str | None = None
+    model: ModelName | None = None
 
 
 @lru_cache(maxsize=32)

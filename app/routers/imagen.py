@@ -11,6 +11,7 @@ from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.mime import validate_upload
 from app.utils.response import APIResponse
+from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/imagen", tags=["Imagen"], dependencies=[Depends(verify_api_key)])
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/api/v1/imagen", tags=["Imagen"], dependencies=[Depen
 
 class ImageGenerationRequest(BaseModel):
     prompt: str
-    model: str = "imagen-4.0-generate-001"
+    model: ModelName = "imagen-4.0-generate-001"
 
 
 class ImageResponse(BaseModel):
@@ -46,7 +47,7 @@ async def edit_image(
     request: Request,
     prompt: str,
     file: UploadFile = File(...),
-    model: str = "imagen-4.0-generate-001",
+    model: ModelName = "imagen-4.0-generate-001",
 ) -> APIResponse[ImageResponse]:
     """Edit an image based on a text prompt."""
     try:

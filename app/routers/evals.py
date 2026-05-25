@@ -13,6 +13,7 @@ from app.services.evals import run_eval
 from app.utils.auth import verify_api_key, verify_master_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -28,7 +29,7 @@ class DatasetCreate(BaseModel):
 class EvalRunRequest(BaseModel):
     dataset_id: str
     agent_id_or_preset: str
-    model: str
+    model: ModelName
 
 
 @router.post("/datasets", response_model=APIResponse)

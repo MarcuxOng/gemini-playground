@@ -2,6 +2,52 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, AsyncMock
 
+
+# --- Model name validation ---
+
+@pytest.mark.parametrize("bad_model", [
+    "../../etc/passwd",
+    "gpt-4",
+    "claude-3",
+    "openai/gpt-4",
+    "",
+    "GEMINI-flash",
+])
+def test_gemini_rejects_invalid_model_names(client: TestClient, auth_headers, bad_model: str):
+    response = client.post(
+        "/api/v1/gemini/",
+        json={"model": bad_model, "prompt": "hello"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("good_model", [
+    "gemini-2.5-flash",
+    "gemini-1.5-pro",
+    "text-embedding-004",
+    "imagen-4.0-generate-001",
+])
+def test_gemini_accepts_valid_model_names(client: TestClient, auth_headers, mock_gemini_client_global, good_model: str):
+    response = client.post(
+        "/api/v1/gemini/",
+        json={"model": good_model, "prompt": "hello"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+
+def test_gemini_structured_rejects_invalid_model(client: TestClient, auth_headers):
+    response = client.post(
+        "/api/v1/gemini/structured",
+        json={"model": "gpt-4", "prompt": "hello", "response_schema": {"type": "object"}},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+# --- Existing tests ---
+
 def test_list_gemini_models_returns_200(client: TestClient, auth_headers):
     response = client.get("/api/v1/gemini/models", headers=auth_headers)
     assert response.status_code in [200, 404]
