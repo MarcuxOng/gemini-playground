@@ -10,6 +10,7 @@ import requests
 
 from app.config import settings
 from app.tools import register
+from app.utils.tool_limiter import check_tool_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,8 @@ def get_wikipedia_summary(query: str) -> str:
 
     :param query: The search term or topic (e.g., 'Quantum mechanics').
     """
+    if not check_tool_rate_limit("get_wikipedia_summary", "20/minute"):
+        return "Rate limit exceeded: max 20 Wikipedia requests per minute."
     try:
         logger.info(f"Fetching Wikipedia summary for: {query}")
         search_url = f"{settings.wikipedia_base_url}"

@@ -4,6 +4,7 @@ import logging
 
 from app.services.gemini import gemini_service
 from app.tools import register
+from app.utils.tool_limiter import check_tool_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,8 @@ def google_search(query: str) -> str:
 
     :param query: The search query.
     """
+    if not check_tool_rate_limit("google_search", "10/minute"):
+        return "Rate limit exceeded: max 10 search requests per minute."
     try:
         # Use gemini_service with search grounding enabled
         # This will return a response with citations formatted

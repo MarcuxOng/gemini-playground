@@ -10,6 +10,7 @@ import requests
 
 from app.config import settings
 from app.tools import register
+from app.utils.tool_limiter import check_tool_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,8 @@ def get_crypto_price(query: str) -> str:
     Get the current price of any cryptocurrency by its symbol or name from CoinGecko.
     :param query: The cryptocurrency symbol (e.g., 'BTC'), name ('Bitcoin'), or other identifier.
     """
+    if not check_tool_rate_limit("get_crypto_price", "15/minute"):
+        return "Rate limit exceeded: max 15 crypto price requests per minute."
     try:
         # Dynamically find the crypto ID from the user's query
         crypto_id = find_crypto_id(query)
