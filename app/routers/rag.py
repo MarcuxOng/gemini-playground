@@ -37,7 +37,7 @@ async def ingest_documents(
     Ingest text into the Pinecone vector store.
     """
     try:
-        num_chunks = await run_in_threadpool(ingest_service, body.text)
+        num_chunks = await run_in_threadpool(ingest_service, body.text, api_key.id)
         return APIResponse(
             data={
                 "message": "Successfully ingested text",
@@ -63,7 +63,9 @@ async def query_rag(
     Query the RAG pipeline.
     """
     try:
-        response = await run_in_threadpool(query_service, body.query, body.model, body.provider)
+        response = await run_in_threadpool(
+            query_service, body.query, body.model, body.provider, api_key.id
+        )
         return APIResponse(data={"query": body.query, "response": response})
     except HTTPException:
         raise
