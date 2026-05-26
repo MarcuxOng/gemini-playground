@@ -134,7 +134,10 @@ def gemini_service(
                 url_context = "url" in native_tools
                 location = "location" in native_tools
                 tools_config = build_native_tools(
-                    grounding=grounding, code_exec=code_exec, url_context=url_context, location=location
+                    grounding=grounding,
+                    code_exec=code_exec,
+                    url_context=url_context,
+                    location=location,
                 )
 
             config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
