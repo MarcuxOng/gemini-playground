@@ -9,20 +9,26 @@ from __future__ import annotations
 import logging
 
 from fastmcp import FastMCP
+from limits import parse as parse_limit
+from limits.storage import storage_from_string
+from limits.strategies import FixedWindowRateLimiter
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
+from app.config import settings
 from app.database.db import SessionLocal
 from app.tools import get_registry
 from app.utils.auth import check_api_key
 
 logger = logging.getLogger(__name__)
 mcp = FastMCP(
-    name="ai-llm-playground",
-    instructions="An AI platform exposing tools",
+    name="gemini-playground",
 )
+
+_mcp_rate_limit = parse_limit("60/minute")
+_mcp_rate_limiter = FixedWindowRateLimiter(storage_from_string(settings.redis_url or "memory://"))
 
 
 class MCPAuthMiddleware(BaseHTTPMiddleware):
@@ -38,12 +44,21 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
 
             db = SessionLocal()
             try:
-                if check_api_key(api_key, db):
-                    return await call_next(request)
+                authenticated = check_api_key(api_key, db)
             finally:
                 db.close()
 
-            return JSONResponse({"error": "Unauthorized: Invalid API Key"}, status_code=401)
+            if not authenticated:
+                return JSONResponse({"error": "Unauthorized: Invalid API Key"}, status_code=401)
+
+            client_ip = request.client.host if request.client else "unknown"
+            if not _mcp_rate_limiter.hit(_mcp_rate_limit, "mcp", client_ip):
+                return JSONResponse(
+                    {"error": "Rate limit exceeded. Max 60 requests/minute per IP."},
+                    status_code=429,
+                )
+
+            return await call_next(request)
         return await call_next(request)
 
 
