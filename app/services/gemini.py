@@ -16,6 +16,42 @@ from app.services.llm import build_llm
 logger = logging.getLogger(__name__)
 client = build_genai_client()
 
+SAFETY_SETTINGS = [
+    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_LOW_AND_ABOVE"),
+    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_LOW_AND_ABOVE"),
+    types.SafetySetting(
+        category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_LOW_AND_ABOVE"
+    ),
+    types.SafetySetting(
+        category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_LOW_AND_ABOVE"
+    ),
+]
+
+
+class SafetyBlockError(Exception):
+    def __init__(self, categories: list[str]) -> None:
+        self.categories = categories
+        super().__init__("Content blocked by safety filters")
+
+
+def _check_safety_block(response: types.GenerateContentResponse, model: str) -> None:
+    """Raise SafetyBlockError if the response was blocked by Gemini safety filters."""
+    pf = getattr(response, "prompt_feedback", None)
+    if pf and getattr(pf, "block_reason", None):
+        _log_safety_block(model, ["PROMPT_BLOCKED"])
+        raise SafetyBlockError(["PROMPT_BLOCKED"])
+
+    for candidate in getattr(response, "candidates", None) or []:
+        if getattr(candidate, "finish_reason", None) == types.FinishReason.SAFETY:
+            ratings = getattr(candidate, "safety_ratings", None) or []
+            blocked = [str(r.category) for r in ratings if getattr(r, "blocked", False)]
+            _log_safety_block(model, blocked or ["UNKNOWN"])
+            raise SafetyBlockError(blocked or ["UNKNOWN"])
+
+
+def _log_safety_block(model: str, categories: list[str]) -> None:
+    logger.warning(json.dumps({"event": "safety_block", "model": model, "categories": categories}))
+
 
 def list_gemini_models() -> list[str]:
     try:
@@ -140,10 +176,14 @@ def gemini_service(
                     location=location,
                 )
 
-            config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
+            config = types.GenerateContentConfig(
+                tools=tools_config,
+                safety_settings=SAFETY_SETTINGS,
+            )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
             response = client.models.generate_content(model=model, contents=contents, config=config)
+            _check_safety_block(response, model)
             text = str(response.text or "")
 
             # Format and append grounding sources if search was enabled and sources found
@@ -167,6 +207,9 @@ def gemini_service(
             logger.info(f"Generating content with Gemini model: {model}")
             llm = build_llm(model)
             llm_response = llm.invoke(prompt)
+            if llm_response.response_metadata.get("finish_reason") == "SAFETY":
+                _log_safety_block(model, [])
+                raise SafetyBlockError([])
             return str(llm_response.content)
 
     except Exception as e:
@@ -187,8 +230,10 @@ def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=schema,
+                safety_settings=SAFETY_SETTINGS,
             ),
         )
+        _check_safety_block(response, model)
 
         if not response.text:
             raise ValueError("Gemini returned an empty response")
@@ -257,7 +302,10 @@ async def gemini_stream_service(
                 grounding=grounding, code_exec=code_exec, url_context=url_context, location=location
             )
 
-        config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
+        config = types.GenerateContentConfig(
+            tools=tools_config,
+            safety_settings=SAFETY_SETTINGS,
+        )
 
         async_client = client.aio
         response = await async_client.models.generate_content_stream(
@@ -270,6 +318,9 @@ async def gemini_stream_service(
 
             # Check for grounding metadata in candidates
             for candidate in getattr(chunk, "candidates", []) or []:
+                if getattr(candidate, "finish_reason", None) == types.FinishReason.SAFETY:
+                    _log_safety_block(model, ["STREAM_SAFETY_BLOCK"])
+                    raise SafetyBlockError(["STREAM_SAFETY_BLOCK"])
                 if getattr(candidate, "grounding_metadata", None):
                     meta = candidate.grounding_metadata
                     chunks_list = getattr(meta, "grounding_chunks", []) or []

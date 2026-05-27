@@ -18,7 +18,7 @@ from app.agents import PRESETS, AgentConfig, build_agent, run_once
 from app.database.models import Agents, APIKey, MCPServerConfig, Thread, ThreadMessage
 from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
-from app.services.gemini import generate_thread_title, resolve_attachments
+from app.services.gemini import SafetyBlockError, generate_thread_title, resolve_attachments
 from app.services.rag import rag_owner_id
 from app.utils.validators import ModelName
 
@@ -267,6 +267,8 @@ async def run_agent_service(
         return AgentRunResponse(
             answer=answer, preset=preset_name, model=model, thread_id=str(thread.id)
         )
+    except SafetyBlockError:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:

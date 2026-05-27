@@ -4,12 +4,20 @@ import logging
 
 import google.auth
 from google.auth.exceptions import DefaultCredentialsError
+from google.genai.types import HarmBlockThreshold, HarmCategory
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_vertexai import ChatVertexAI
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+_SAFETY_SETTINGS = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+}
 
 
 def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatGoogleGenerativeAI:
@@ -26,6 +34,7 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatG
                 temperature=temperature,
                 location=settings.gcp_region,
                 project=settings.gcp_project_id,
+                safety_settings=_SAFETY_SETTINGS,
             )
         except DefaultCredentialsError:
             logger.warning("Application Default Credentials (ADC) not found. Falling back.")
@@ -38,4 +47,5 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatG
         model=model_name,
         google_api_key=settings.gemini_api_key,
         temperature=temperature,
+        safety_settings=_SAFETY_SETTINGS,
     )
