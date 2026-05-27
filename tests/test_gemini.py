@@ -85,6 +85,7 @@ def test_gemini_native_tools_search(client: TestClient, auth_headers, mock_gemin
     
     mock_response = MagicMock()
     mock_response.text = "The answer is Google."
+    mock_response.prompt_feedback = None
     
     # Mock grounding metadata
     mock_candidate = MagicMock()
@@ -125,6 +126,7 @@ def test_gemini_native_tools_code_and_url(client: TestClient, auth_headers, mock
     mock_response = MagicMock()
     mock_response.text = "Executed code and scraped URL successfully."
     mock_response.candidates = []
+    mock_response.prompt_feedback = None
     mock_gemini_client_global.models.generate_content.return_value = mock_response
     
     response = client.post(

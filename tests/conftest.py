@@ -30,6 +30,7 @@ def mock_gemini_client_global():
     mock_response = MagicMock()
     mock_response.text = '{"foo": "bar"}'
     mock_response.candidates = []
+    mock_response.prompt_feedback = None
     mock_client.models.generate_content.return_value = mock_response
 
     mock_llm_instance = MagicMock()

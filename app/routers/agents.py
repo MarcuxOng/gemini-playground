@@ -22,6 +22,7 @@ from app.tools import get_registry, has_tool, list_tool_names
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.sanitizer import sanitize_prompt
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -157,6 +158,7 @@ async def run_agent(
     """
     Unified endpoint for running agents.
     """
+    body.prompt = sanitize_prompt(body.prompt)
     logger.info(f"Calling agents API with model: {body.model}")
     response = await run_agent_service(body, db, api_key)
     return APIResponse(data=response)
@@ -173,6 +175,7 @@ async def run_agent_stream(
     """
     Endpoint for running agents with streaming responses.
     """
+    body.prompt = sanitize_prompt(body.prompt)
     logger.info(f"Starting agent stream with model: {body.model}")
     response = StreamingResponse(
         run_agent_stream_service(body, db, api_key), media_type="text/event-stream"

@@ -23,6 +23,7 @@ from app.services.gemini import (
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.sanitizer import sanitize_prompt
 from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
@@ -73,15 +74,16 @@ async def gemini(
     db: Session = Depends(get_db),
     api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
+    prompt = sanitize_prompt(body.prompt)
     logger.info(
-        f"Calling Gemini API with model: {body.model}, prompt_len: {len(body.prompt)}, "
+        f"Calling Gemini API with model: {body.model}, prompt_len: {len(prompt)}, "
         f"attachments: {len(body.attachments)}, native_tools: {body.native_tools}"
     )
-    logger.debug(f"Full prompt: {body.prompt!r}, attachment_ids: {body.attachments}")
+    logger.debug(f"Full prompt: {prompt!r}, attachment_ids: {body.attachments}")
     response = await run_in_threadpool(
         gemini_service,
         model=body.model,
-        prompt=body.prompt,
+        prompt=prompt,
         attachments=body.attachments,
         db=db,
         owner_id=str(api_key.id),
@@ -94,9 +96,12 @@ async def gemini(
 @router.post("/structured", response_model=APIResponse)
 @limiter.limit("20/minute")
 async def gemini_structured(request: Request, body: StructuredInput) -> APIResponse:  # type: ignore[type-arg]
-    logger.info(f"Calling Structured Gemini API with model: {body.model}, prompt: {body.prompt}")
+    prompt = sanitize_prompt(body.prompt)
+    logger.info(
+        f"Calling Structured Gemini API with model: {body.model}, prompt_len: {len(prompt)}"
+    )
     response = await run_in_threadpool(
-        structured_service, model=body.model, prompt=body.prompt, schema=body.response_schema
+        structured_service, model=body.model, prompt=prompt, schema=body.response_schema
     )
 
     return APIResponse(data=response)
@@ -113,17 +118,18 @@ async def gemini_stream(
     """
     Stream Gemini response
     """
+    prompt = sanitize_prompt(body.prompt)
     logger.info(
-        f"Starting Gemini stream with model: {body.model}, prompt_len: {len(body.prompt)}, "
+        f"Starting Gemini stream with model: {body.model}, prompt_len: {len(prompt)}, "
         f"attachments: {len(body.attachments)}, native_tools: {body.native_tools}"
     )
-    logger.debug(f"Full prompt: {body.prompt!r}, attachment_ids: {body.attachments}")
+    logger.debug(f"Full prompt: {prompt!r}, attachment_ids: {body.attachments}")
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
             async for chunk in gemini_stream_service(
                 body.model,
-                body.prompt,
+                prompt,
                 attachments=body.attachments,
                 db=db,
                 owner_id=str(api_key.id),

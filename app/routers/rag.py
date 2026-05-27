@@ -12,6 +12,7 @@ from app.services.rag import ingest_service, query_service
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.sanitizer import sanitize_prompt
 from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,8 @@ async def ingest_documents(
     Ingest text into the Pinecone vector store.
     """
     try:
-        num_chunks = await run_in_threadpool(ingest_service, body.text, api_key.id)
+        text = sanitize_prompt(body.text)
+        num_chunks = await run_in_threadpool(ingest_service, text, api_key.id)
         return APIResponse(
             data={
                 "message": "Successfully ingested text",
@@ -63,8 +65,9 @@ async def query_rag(
     Query the RAG pipeline.
     """
     try:
+        query = sanitize_prompt(body.query)
         response = await run_in_threadpool(
-            query_service, body.query, body.model, body.provider, api_key.id
+            query_service, query, body.model, body.provider, api_key.id
         )
         return APIResponse(data={"query": body.query, "response": response})
     except HTTPException:

@@ -14,6 +14,7 @@ from app.routers import all_routers
 from app.services.gemini import SafetyBlockError
 from app.utils.exceptions import (
     http_exception_handler,
+    input_sanitization_exception_handler,
     safety_block_exception_handler,
     unhandled_exception_handler,
 )
@@ -21,6 +22,7 @@ from app.utils.limiter import limiter
 from app.utils.middleware import UsageLoggingMiddleware
 from app.utils.observability import setup_observability
 from app.utils.response import APIResponse
+from app.utils.sanitizer import InputSanitizationError
 
 
 @asynccontextmanager
@@ -43,6 +45,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(SafetyBlockError, safety_block_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(InputSanitizationError, input_sanitization_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
