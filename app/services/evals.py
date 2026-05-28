@@ -94,7 +94,7 @@ async def run_eval(
             # Use structured_service as the grader
             grade = await run_in_threadpool(
                 structured_service,
-                model="gemini-3.1-pro-preview",
+                model="gemini-2.5-flash",
                 prompt=grader_prompt,
                 schema=GRADER_SCHEMA,
             )
@@ -129,6 +129,7 @@ async def run_eval(
         "passed": passed_count,
         "failed": len(cases) - passed_count,
         "total": len(cases),
+        "model": model,
         "results": results,
     }
 
