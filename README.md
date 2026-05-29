@@ -51,30 +51,6 @@ The platform is designed to be **GCP-native** and **stateless**, scaling seamles
 
 ---
 
-## 🚀 Local Development
-
-1.  **Clone & Install:**
-    ```bash
-    git clone https://github.com/your-username/ai-llm-playground.git
-    cd ai-llm-playground
-    pip install -r requirements.txt
-    ```
-
-2.  **Configure Environment:**
-    ```bash
-    cp .env.example .env
-    # Fill in GEMINI_API_KEY, DATABASE_URL, etc.
-    ```
-
-3.  **Run Server:**
-    ```bash
-    python -m app
-    # API available at http://localhost:8000
-    # Docs available at http://localhost:8000/docs
-    ```
-
----
-
 ## 🛠️ Stack
 
 *   **Backend:** FastAPI (Python 3.11)
