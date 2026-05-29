@@ -42,7 +42,7 @@ def verify_ws_api_key(db: Session, settings: Settings, api_key: str | None = Non
 @router.websocket("/ws")
 async def live_ws_endpoint(
     websocket: WebSocket,
-    model: ModelName = Query("gemini-2.0-flash-exp"),
+    model: ModelName = Query("gemini-2.5-flash"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> None:

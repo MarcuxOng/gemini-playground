@@ -246,7 +246,7 @@ def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[
         raise
 
 
-def generate_thread_title(prompt: str, model: str = "gemini-1.5-flash") -> str:
+def generate_thread_title(prompt: str, model: str = "gemini-2.5-flash") -> str:
     """
     Generates a short (3-5 words) descriptive title for a thread based on the initial prompt.
     """
