@@ -44,7 +44,7 @@ class ProviderInput(BaseModel):
     model: ModelName
     prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
-    native_tools: list[Literal["search", "code", "url"]] = []
+    native_tools: list[Literal["search", "code", "url", "location"]] = []
 
     @field_validator("attachments")
     @classmethod
