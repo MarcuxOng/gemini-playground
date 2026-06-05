@@ -10,6 +10,7 @@ import requests
 
 from app.config import settings
 from app.tools import register
+from app.utils.tool_limiter import check_tool_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,8 @@ def get_weather(location: str, units: str = "metric") -> str:
     :param location: The location to get weather for (e.g., 'London, UK' or '1.35,103.8').
     :param units: Unit system for temperature ('metric', 'imperial', or 'standard'). Defaults to 'metric'.
     """
+    if not check_tool_rate_limit("get_weather", "30/minute"):
+        return "Rate limit exceeded: max 30 weather requests per minute."
     try:
         logger.info(f"Fetching weather for: {location} (units: {units})")
 

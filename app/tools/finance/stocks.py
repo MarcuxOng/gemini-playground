@@ -10,6 +10,7 @@ import requests
 
 from app.config import settings
 from app.tools import register
+from app.utils.tool_limiter import check_tool_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,8 @@ def get_stock_price(symbol: str) -> str:
     Get the current stock price for a given symbol.
     :param symbol: The stock ticker symbol (e.g., 'AAPL' for Apple Inc.).
     """
+    if not check_tool_rate_limit("get_stock_price", "5/minute"):
+        return "Rate limit exceeded: max 5 stock price requests per minute."
     try:
         logger.info(f"Fetching stock price for: {symbol}")
         url = settings.alpha_vantage_base_url

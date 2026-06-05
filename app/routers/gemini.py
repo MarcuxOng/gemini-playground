@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -22,21 +23,38 @@ from app.services.gemini import (
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.sanitizer import sanitize_prompt
+from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/gemini", tags=["Gemini"], dependencies=[Depends(verify_api_key)])
 
 
+def _validate_attachment_ids(v: list[str]) -> list[str]:
+    """Only DB-owned UUIDs are accepted as attachment references."""
+    for att in v:
+        try:
+            uuid.UUID(att)
+        except ValueError:
+            raise ValueError(f"Attachment must be a DB file UUID, got: {att!r}") from None
+    return v
+
+
 class ProviderInput(BaseModel):
-    model: str
-    prompt: str
+    model: ModelName
+    prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url"]] = []
 
+    @field_validator("attachments")
+    @classmethod
+    def validate_attachments(cls, v: list[str]) -> list[str]:
+        return _validate_attachment_ids(v)
+
 
 class StructuredInput(BaseModel):
-    model: str
-    prompt: str
+    model: ModelName
+    prompt: str = Field(..., max_length=32_000)
     response_schema: dict[str, Any]  # JSON Schema dict
 
 
@@ -56,15 +74,16 @@ async def gemini(
     db: Session = Depends(get_db),
     api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
+    prompt = sanitize_prompt(body.prompt)
     logger.info(
-        f"Calling Gemini API with model: {body.model}, prompt_len: {len(body.prompt)}, "
+        f"Calling Gemini API with model: {body.model}, prompt_len: {len(prompt)}, "
         f"attachments: {len(body.attachments)}, native_tools: {body.native_tools}"
     )
-    logger.debug(f"Full prompt: {body.prompt!r}, attachment_ids: {body.attachments}")
+    logger.debug(f"Full prompt: {prompt!r}, attachment_ids: {body.attachments}")
     response = await run_in_threadpool(
         gemini_service,
         model=body.model,
-        prompt=body.prompt,
+        prompt=prompt,
         attachments=body.attachments,
         db=db,
         owner_id=str(api_key.id),
@@ -77,9 +96,12 @@ async def gemini(
 @router.post("/structured", response_model=APIResponse)
 @limiter.limit("20/minute")
 async def gemini_structured(request: Request, body: StructuredInput) -> APIResponse:  # type: ignore[type-arg]
-    logger.info(f"Calling Structured Gemini API with model: {body.model}, prompt: {body.prompt}")
+    prompt = sanitize_prompt(body.prompt)
+    logger.info(
+        f"Calling Structured Gemini API with model: {body.model}, prompt_len: {len(prompt)}"
+    )
     response = await run_in_threadpool(
-        structured_service, model=body.model, prompt=body.prompt, schema=body.response_schema
+        structured_service, model=body.model, prompt=prompt, schema=body.response_schema
     )
 
     return APIResponse(data=response)
@@ -96,17 +118,18 @@ async def gemini_stream(
     """
     Stream Gemini response
     """
+    prompt = sanitize_prompt(body.prompt)
     logger.info(
-        f"Starting Gemini stream with model: {body.model}, prompt_len: {len(body.prompt)}, "
+        f"Starting Gemini stream with model: {body.model}, prompt_len: {len(prompt)}, "
         f"attachments: {len(body.attachments)}, native_tools: {body.native_tools}"
     )
-    logger.debug(f"Full prompt: {body.prompt!r}, attachment_ids: {body.attachments}")
+    logger.debug(f"Full prompt: {prompt!r}, attachment_ids: {body.attachments}")
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
             async for chunk in gemini_stream_service(
                 body.model,
-                body.prompt,
+                prompt,
                 attachments=body.attachments,
                 db=db,
                 owner_id=str(api_key.id),

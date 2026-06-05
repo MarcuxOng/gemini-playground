@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.database.models import APIKey
@@ -12,19 +12,21 @@ from app.services.rag import ingest_service, query_service
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.sanitizer import sanitize_prompt
+from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG"], dependencies=[Depends(verify_api_key)])
 
 
 class IngestRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=100_000)
 
 
 class QueryRequest(BaseModel):
     provider: str
-    model: str
-    query: str
+    model: ModelName
+    query: str = Field(..., max_length=4_000)
 
 
 @router.post("/ingest", response_model=APIResponse)
@@ -36,7 +38,8 @@ async def ingest_documents(
     Ingest text into the Pinecone vector store.
     """
     try:
-        num_chunks = await run_in_threadpool(ingest_service, body.text)
+        text = sanitize_prompt(body.text)
+        num_chunks = await run_in_threadpool(ingest_service, text, api_key.id)
         return APIResponse(
             data={
                 "message": "Successfully ingested text",
@@ -45,8 +48,9 @@ async def ingest_documents(
         )
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError:
+        logger.exception("Ingestion validation error")
+        raise HTTPException(status_code=400, detail="Invalid ingestion request.") from None
     except Exception as e:
         logger.exception("Ingestion API error")
         raise HTTPException(status_code=500, detail="Failed to ingest text.") from e
@@ -61,12 +65,16 @@ async def query_rag(
     Query the RAG pipeline.
     """
     try:
-        response = await run_in_threadpool(query_service, body.query, body.model, body.provider)
+        query = sanitize_prompt(body.query)
+        response = await run_in_threadpool(
+            query_service, query, body.model, body.provider, api_key.id
+        )
         return APIResponse(data={"query": body.query, "response": response})
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError:
+        logger.exception("RAG query validation error")
+        raise HTTPException(status_code=400, detail="Invalid query request.") from None
     except Exception as e:
         logger.exception("RAG query API error")
         raise HTTPException(status_code=500, detail="Failed to execute RAG query.") from e

@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
@@ -13,6 +13,7 @@ from app.services.evals import run_eval
 from app.utils.auth import verify_api_key, verify_master_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -21,14 +22,14 @@ router = APIRouter(
 
 
 class DatasetCreate(BaseModel):
-    name: str
+    name: str = Field(..., max_length=200)
     cases: list[dict[str, Any]]  # [{input, expected}]
 
 
 class EvalRunRequest(BaseModel):
     dataset_id: str
     agent_id_or_preset: str
-    model: str
+    model: ModelName
 
 
 @router.post("/datasets", response_model=APIResponse)

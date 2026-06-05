@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from app.services.rag import search_documents
+from app.services.rag import rag_owner_id, search_documents
 from app.tools import register
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ def search_knowledge_base(query: str) -> str:
     """
     try:
         logger.info(f"Tool calling RAG search for query: {query}")
-        docs = search_documents(query)
+        docs = search_documents(query, rag_owner_id.get())
 
         if not docs:
             return "No relevant information found in the knowledge base."

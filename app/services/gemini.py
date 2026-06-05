@@ -3,8 +3,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import mimetypes
-import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -17,6 +15,42 @@ from app.services.llm import build_llm
 
 logger = logging.getLogger(__name__)
 client = build_genai_client()
+
+SAFETY_SETTINGS = [
+    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_LOW_AND_ABOVE"),
+    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_LOW_AND_ABOVE"),
+    types.SafetySetting(
+        category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_LOW_AND_ABOVE"
+    ),
+    types.SafetySetting(
+        category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_LOW_AND_ABOVE"
+    ),
+]
+
+
+class SafetyBlockError(Exception):
+    def __init__(self, categories: list[str]) -> None:
+        self.categories = categories
+        super().__init__("Content blocked by safety filters")
+
+
+def _check_safety_block(response: types.GenerateContentResponse, model: str) -> None:
+    """Raise SafetyBlockError if the response was blocked by Gemini safety filters."""
+    pf = getattr(response, "prompt_feedback", None)
+    if pf and getattr(pf, "block_reason", None):
+        _log_safety_block(model, ["PROMPT_BLOCKED"])
+        raise SafetyBlockError(["PROMPT_BLOCKED"])
+
+    for candidate in getattr(response, "candidates", None) or []:
+        if getattr(candidate, "finish_reason", None) == types.FinishReason.SAFETY:
+            ratings = getattr(candidate, "safety_ratings", None) or []
+            blocked = [str(r.category) for r in ratings if getattr(r, "blocked", False)]
+            _log_safety_block(model, blocked or ["UNKNOWN"])
+            raise SafetyBlockError(blocked or ["UNKNOWN"])
+
+
+def _log_safety_block(model: str, categories: list[str]) -> None:
+    logger.warning(json.dumps({"event": "safety_block", "model": model, "categories": categories}))
 
 
 def list_gemini_models() -> list[str]:
@@ -37,28 +71,23 @@ def list_gemini_models() -> list[str]:
 
 
 def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> list[dict[str, str]]:
-    """Resolves attachment IDs or URIs to file URIs and MIME types."""
+    """Resolves DB file UUIDs to Gemini file URIs and MIME types.
+
+    Only DB-owned UUIDs are accepted; raw URIs are rejected upstream by the
+    Pydantic validators on ProviderInput and AgentRunRequest.
+    """
     resolved = []
     for att in attachments:
-        is_uuid = False
-        try:
-            uuid.UUID(att)
-            is_uuid = True
-        except ValueError:
-            pass
-
-        if is_uuid:
-            query = db.query(UploadedFile).filter(UploadedFile.id == att)
-            if owner_id != "master":
-                query = query.filter(UploadedFile.owner_id == owner_id)
-            file_rec = query.first()
-            if file_rec:
-                resolved.append(
-                    {"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)}
-                )
-        elif att.startswith("https://") or att.startswith("gs://"):
-            mime_type, _ = mimetypes.guess_type(att)
-            resolved.append({"uri": att, "mime_type": mime_type or "application/octet-stream"})
+        query = db.query(UploadedFile).filter(UploadedFile.id == att)
+        if owner_id != "master":
+            query = query.filter(UploadedFile.owner_id == owner_id)
+        file_rec = query.first()
+        if file_rec:
+            resolved.append(
+                {"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)}
+            )
+        else:
+            logger.warning(f"Attachment {att!r} not found or not owned by {owner_id!r}; skipping")
     return resolved
 
 
@@ -91,6 +120,7 @@ def build_native_tools(
     grounding: bool = False,
     code_exec: bool = False,
     url_context: bool = False,
+    location: bool = False,
 ) -> list[types.Tool]:
     """Build a list of native tools for the Gemini model."""
     native_tools: list[types.Tool] = []
@@ -100,6 +130,8 @@ def build_native_tools(
         native_tools.append(types.Tool(code_execution=types.ToolCodeExecution()))
     if url_context:
         native_tools.append(types.Tool(url_context=types.UrlContext()))
+    if location:
+        native_tools.append(types.Tool(google_maps=types.GoogleMaps()))
     return native_tools
 
 
@@ -136,14 +168,22 @@ def gemini_service(
                 grounding = "search" in native_tools
                 code_exec = "code" in native_tools
                 url_context = "url" in native_tools
+                location = "location" in native_tools
                 tools_config = build_native_tools(
-                    grounding=grounding, code_exec=code_exec, url_context=url_context
+                    grounding=grounding,
+                    code_exec=code_exec,
+                    url_context=url_context,
+                    location=location,
                 )
 
-            config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
+            config = types.GenerateContentConfig(
+                tools=tools_config,
+                safety_settings=SAFETY_SETTINGS,
+            )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
             response = client.models.generate_content(model=model, contents=contents, config=config)
+            _check_safety_block(response, model)
             text = str(response.text or "")
 
             # Format and append grounding sources if search was enabled and sources found
@@ -167,6 +207,9 @@ def gemini_service(
             logger.info(f"Generating content with Gemini model: {model}")
             llm = build_llm(model)
             llm_response = llm.invoke(prompt)
+            if llm_response.response_metadata.get("finish_reason") == "SAFETY":
+                _log_safety_block(model, [])
+                raise SafetyBlockError([])
             return str(llm_response.content)
 
     except Exception as e:
@@ -187,8 +230,10 @@ def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=schema,
+                safety_settings=SAFETY_SETTINGS,
             ),
         )
+        _check_safety_block(response, model)
 
         if not response.text:
             raise ValueError("Gemini returned an empty response")
@@ -201,7 +246,7 @@ def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[
         raise
 
 
-def generate_thread_title(prompt: str, model: str = "gemini-1.5-flash") -> str:
+def generate_thread_title(prompt: str, model: str = "gemini-2.5-flash") -> str:
     """
     Generates a short (3-5 words) descriptive title for a thread based on the initial prompt.
     """
@@ -252,11 +297,15 @@ async def gemini_stream_service(
             grounding = "search" in native_tools
             code_exec = "code" in native_tools
             url_context = "url" in native_tools
+            location = "location" in native_tools
             tools_config = build_native_tools(
-                grounding=grounding, code_exec=code_exec, url_context=url_context
+                grounding=grounding, code_exec=code_exec, url_context=url_context, location=location
             )
 
-        config = types.GenerateContentConfig(tools=tools_config) if tools_config else None
+        config = types.GenerateContentConfig(
+            tools=tools_config,
+            safety_settings=SAFETY_SETTINGS,
+        )
 
         async_client = client.aio
         response = await async_client.models.generate_content_stream(
@@ -269,6 +318,9 @@ async def gemini_stream_service(
 
             # Check for grounding metadata in candidates
             for candidate in getattr(chunk, "candidates", []) or []:
+                if getattr(candidate, "finish_reason", None) == types.FinishReason.SAFETY:
+                    _log_safety_block(model, ["STREAM_SAFETY_BLOCK"])
+                    raise SafetyBlockError(["STREAM_SAFETY_BLOCK"])
                 if getattr(candidate, "grounding_metadata", None):
                     meta = candidate.grounding_metadata
                     chunks_list = getattr(meta, "grounding_chunks", []) or []

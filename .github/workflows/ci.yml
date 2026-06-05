@@ -67,3 +67,24 @@ jobs:
           pip install pytest pytest-asyncio
       - name: Run tests
         run: pytest -v tests/
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t gemini-playground:ci .
+      - name: Start container
+        run: |
+          docker run -d --name app \
+            -p 8000:8000 \
+            -e GEMINI_API_KEY=test-key \
+            -e MASTER_API_KEY=test-master-key \
+            -e GCP_PROJECT_ID=test-project \
+            -e PINECONE_NAMESPACE=test-ns \
+            -e PINECONE_INDEX_NAME=test-idx \
+            -e PINECONE_API_KEY=test-key \
+            -e ALPHA_VANTAGE_API_KEY=test \
+            -e OPENWEATHERMAP_API_KEY=test \
+            -e NEWS_API_KEY=test \
+            gemini-playground:ci

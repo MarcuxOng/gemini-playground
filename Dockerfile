@@ -37,6 +37,7 @@ ENV PYTHONUNBUFFERED=1 \
 # Install only runtime system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

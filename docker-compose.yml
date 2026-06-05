@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
- ai-llm-playground:
+ gemini-playground:
    build:
      context: .
      dockerfile: Dockerfile
-   container_name: ai-llm-playground
+   container_name: gemini-playground
    ports:
      - "8000:8000"
    environment:

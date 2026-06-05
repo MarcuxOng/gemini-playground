@@ -7,6 +7,13 @@ from app.database.db import Base, engine
 
 
 @pytest.fixture(scope="session", autouse=True)
+def mock_observability():
+    """Prevent CloudTraceSpanExporter from blocking on GCP network during tests."""
+    with patch("app.utils.observability.CloudTraceSpanExporter", MagicMock()):
+        yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def setup_database():
     # Initialize the database tables once for the test session
     Base.metadata.create_all(bind=engine)
@@ -17,22 +24,28 @@ def setup_database():
 
 @pytest.fixture(scope="session", autouse=True)
 def mock_gemini_client_global():
-    """Globally mock the Gemini client where it's used."""
+    """Globally mock the Gemini client and LangChain LLM to prevent real API calls."""
     mock_client = MagicMock()
-    
-    # Mock the structure of the client
     mock_client.models.list_models.return_value = []
-    
-    # Mock generate_content response
     mock_response = MagicMock()
     mock_response.text = '{"foo": "bar"}'
+    mock_response.candidates = []
+    mock_response.prompt_feedback = None
     mock_client.models.generate_content.return_value = mock_response
-    
-    # Use context manager to patch the module-level client
-    with patch("app.services.gemini.client", mock_client):
+
+    mock_llm_instance = MagicMock()
+    mock_llm_response = MagicMock()
+    mock_llm_response.content = "mocked LLM response"
+    mock_llm_instance.invoke.return_value = mock_llm_response
+
+    with (
+        patch("app.services.gemini.client", mock_client),
+        patch("app.services.gemini.build_llm", return_value=mock_llm_instance),
+        patch("app.agents.base.build_llm", return_value=mock_llm_instance),
+    ):
         yield mock_client
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def client():
     # Define test settings with dummy values
     test_settings = Settings(
@@ -45,18 +58,16 @@ def client():
         pinecone_api_key="test-key",
         alpha_vantage_api_key="test",
         openweathermap_api_key="test",
-        news_api_key="test"
+        news_api_key="test",
     )
-    
-    # Override the settings dependency
+
     app.dependency_overrides[get_settings] = lambda: test_settings
-    
+
     with TestClient(app) as test_client:
         yield test_client
     
-    # Clean up overrides
     app.dependency_overrides.clear()
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def auth_headers():
     return {"X-API-Key": "test-master-key"}

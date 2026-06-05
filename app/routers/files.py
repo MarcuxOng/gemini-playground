@@ -13,6 +13,7 @@ from app.database.models import APIKey, UploadedFile
 from app.services.gemini import delete_file_from_gemini, upload_file_to_gemini
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
+from app.utils.mime import validate_upload
 from app.utils.response import APIResponse
 
 logger = logging.getLogger(__name__)
@@ -42,9 +43,16 @@ async def upload_file(
     """Upload a file to the Gemini Files API and track it locally."""
     try:
         content = await file.read()
+        if len(content) > 20 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
         size_bytes = len(content)
         display_name = file.filename or "unknown"
         mime_type = file.content_type or "application/octet-stream"
+        try:
+            validate_upload(content, mime_type)
+        except ValueError as e:
+            detail = str(e)
+            raise HTTPException(status_code=415, detail=detail) from e
 
         # Upload to Gemini Files API
         uploaded = await run_in_threadpool(

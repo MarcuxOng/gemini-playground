@@ -2,6 +2,52 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, AsyncMock
 
+
+# --- Model name validation ---
+
+@pytest.mark.parametrize("bad_model", [
+    "../../etc/passwd",
+    "gpt-4",
+    "claude-3",
+    "openai/gpt-4",
+    "",
+    "GEMINI-flash",
+])
+def test_gemini_rejects_invalid_model_names(client: TestClient, auth_headers, bad_model: str):
+    response = client.post(
+        "/api/v1/gemini/",
+        json={"model": bad_model, "prompt": "hello"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("good_model", [
+    "gemini-2.5-flash",
+    "gemini-1.5-pro",
+    "text-embedding-004",
+    "imagen-4.0-generate-001",
+])
+def test_gemini_accepts_valid_model_names(client: TestClient, auth_headers, mock_gemini_client_global, good_model: str):
+    response = client.post(
+        "/api/v1/gemini/",
+        json={"model": good_model, "prompt": "hello"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+
+def test_gemini_structured_rejects_invalid_model(client: TestClient, auth_headers):
+    response = client.post(
+        "/api/v1/gemini/structured",
+        json={"model": "gpt-4", "prompt": "hello", "response_schema": {"type": "object"}},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+# --- Existing tests ---
+
 def test_list_gemini_models_returns_200(client: TestClient, auth_headers):
     response = client.get("/api/v1/gemini/models", headers=auth_headers)
     assert response.status_code in [200, 404]
@@ -39,6 +85,7 @@ def test_gemini_native_tools_search(client: TestClient, auth_headers, mock_gemin
     
     mock_response = MagicMock()
     mock_response.text = "The answer is Google."
+    mock_response.prompt_feedback = None
     
     # Mock grounding metadata
     mock_candidate = MagicMock()
@@ -79,6 +126,7 @@ def test_gemini_native_tools_code_and_url(client: TestClient, auth_headers, mock
     mock_response = MagicMock()
     mock_response.text = "Executed code and scraped URL successfully."
     mock_response.candidates = []
+    mock_response.prompt_feedback = None
     mock_gemini_client_global.models.generate_content.return_value = mock_response
     
     response = client.post(

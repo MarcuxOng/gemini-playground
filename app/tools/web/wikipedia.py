@@ -10,6 +10,7 @@ import requests
 
 from app.config import settings
 from app.tools import register
+from app.utils.tool_limiter import check_tool_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +23,13 @@ def get_wikipedia_summary(query: str) -> str:
 
     :param query: The search term or topic (e.g., 'Quantum mechanics').
     """
+    if not check_tool_rate_limit("get_wikipedia_summary", "20/minute"):
+        return "Rate limit exceeded: max 20 Wikipedia requests per minute."
     try:
         logger.info(f"Fetching Wikipedia summary for: {query}")
         search_url = f"{settings.wikipedia_base_url}"
         headers = {
-            "User-Agent": "AI-LLM-Playground/1.0 (https://github.com/your-repo; mailto:your-email@example.com) Requests/2.31.0"
+            "User-Agent": "Gemini-Playground/1.0 (https://github.com/your-repo; mailto:your-email@example.com) Requests/2.31.0"
         }
         search_params: dict[str, str | int] = {
             "action": "query",

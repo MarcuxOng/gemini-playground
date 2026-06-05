@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -18,7 +18,9 @@ from app.agents import PRESETS, AgentConfig, build_agent, run_once
 from app.database.models import Agents, APIKey, MCPServerConfig, Thread, ThreadMessage
 from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
-from app.services.gemini import generate_thread_title, resolve_attachments
+from app.services.gemini import SafetyBlockError, generate_thread_title, resolve_attachments
+from app.services.rag import rag_owner_id
+from app.utils.validators import ModelName
 
 CompiledGraph = Any
 
@@ -30,7 +32,7 @@ class AgentCreate(BaseModel):
     description: str | None = None
     system_prompt: str
     tools: list[str]
-    model: str
+    model: ModelName
 
 
 class AgentResponse(BaseModel):
@@ -48,13 +50,24 @@ class AgentResponse(BaseModel):
 
 
 class AgentRunRequest(BaseModel):
-    model: str | None = None
+    model: ModelName | None = None
     preset: str | None = None  # hardcoded preset name
     agent_id: str | None = None  # DB-backed config id — takes priority
     mcp_server_ids: list[str] | None = None  # external MCP servers to connect to
-    prompt: str
+    prompt: str = Field(..., max_length=32_000)
     thread_id: str | None = None
     attachments: list[str] = []
+
+    @field_validator("attachments")
+    @classmethod
+    def validate_attachments(cls, v: list[str]) -> list[str]:
+        """Only DB-owned UUIDs are accepted as attachment references."""
+        for att in v:
+            try:
+                uuid.UUID(att)
+            except ValueError:
+                raise ValueError(f"Attachment must be a DB file UUID, got: {att!r}") from None
+        return v
 
     @model_validator(mode="after")
     def check_source(self) -> AgentRunRequest:
@@ -77,7 +90,7 @@ class AgentUpdate(BaseModel):
     description: str | None = None
     system_prompt: str | None = None
     tools: list[str] | None = None
-    model: str | None = None
+    model: ModelName | None = None
 
 
 @lru_cache(maxsize=32)
@@ -234,9 +247,13 @@ async def run_agent_service(
                     {"type": "media", "file_uri": att["uri"], "mime_type": att["mime_type"]}
                 )
 
-        answer = await run_in_threadpool(
-            run_once, agent, prompt_input, config=config, lg_config=lg_config
-        )
+        rag_token = rag_owner_id.set(str(api_key.id))
+        try:
+            answer = await run_in_threadpool(
+                run_once, agent, prompt_input, config=config, lg_config=lg_config
+            )
+        finally:
+            rag_owner_id.reset(rag_token)
 
         # Save messages
         human_msg = ThreadMessage(
@@ -250,6 +267,8 @@ async def run_agent_service(
         return AgentRunResponse(
             answer=answer, preset=preset_name, model=model, thread_id=str(thread.id)
         )
+    except SafetyBlockError:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
@@ -388,26 +407,30 @@ async def run_agent_stream_service(
 
         full_answer = ""
 
-        async for event in agent.astream_events(
-            {"messages": [("human", prompt_input)]}, config=lg_config, version="v2"
-        ):
-            kind = event["event"]
-            if kind == "on_chat_model_stream":
-                chunk = event["data"]["chunk"].content
-                if chunk:
-                    if isinstance(chunk, str):
-                        full_answer += chunk
-                    elif isinstance(chunk, list):
-                        for part in chunk:
-                            if isinstance(part, dict) and part.get("type") == "text":
-                                full_answer += str(part.get("text", ""))
-                            elif isinstance(part, str):
-                                full_answer += part
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
-            elif kind == "on_tool_start":
-                yield f"data: {json.dumps({'type': 'tool_start', 'tool': event['name'], 'input': event['data'].get('input')}, default=str)}\n\n"
-            elif kind == "on_tool_end":
-                yield f"data: {json.dumps({'type': 'tool_end', 'tool': event['name'], 'output': event['data'].get('output')}, default=str)}\n\n"
+        rag_token = rag_owner_id.set(str(api_key.id))
+        try:
+            async for event in agent.astream_events(
+                {"messages": [("human", prompt_input)]}, config=lg_config, version="v2"
+            ):
+                kind = event["event"]
+                if kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"].content
+                    if chunk:
+                        if isinstance(chunk, str):
+                            full_answer += chunk
+                        elif isinstance(chunk, list):
+                            for part in chunk:
+                                if isinstance(part, dict) and part.get("type") == "text":
+                                    full_answer += str(part.get("text", ""))
+                                elif isinstance(part, str):
+                                    full_answer += part
+                        yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                elif kind == "on_tool_start":
+                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': event['name'], 'input': event['data'].get('input')}, default=str)}\n\n"
+                elif kind == "on_tool_end":
+                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': event['name'], 'output': event['data'].get('output')}, default=str)}\n\n"
+        finally:
+            rag_owner_id.reset(rag_token)
 
         # Save AI message
         ai_msg = ThreadMessage(

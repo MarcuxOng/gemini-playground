@@ -40,7 +40,7 @@ def test_start_eval_success(client: TestClient, auth_headers):
             json={
                 "dataset_id": ds_id,
                 "agent_id_or_preset": "research",
-                "model": "gemini-1.5-flash"
+                "model": "gemini-2.5-flash"
             },
             headers=auth_headers
         )
