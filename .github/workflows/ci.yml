@@ -67,3 +67,37 @@ jobs:
           pip install pytest pytest-asyncio
       - name: Run tests
         run: pytest -v tests/
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t gemini-playground:ci .
+      - name: Start container
+        run: |
+          docker run -d --name app \
+            -p 8000:8000 \
+            -e GEMINI_API_KEY=test-key \
+            -e MASTER_API_KEY=test-master-key \
+            -e GCP_PROJECT_ID=test-project \
+            -e PINECONE_NAMESPACE=test-ns \
+            -e PINECONE_INDEX_NAME=test-idx \
+            -e PINECONE_API_KEY=test-key \
+            -e ALPHA_VANTAGE_API_KEY=test \
+            -e OPENWEATHERMAP_API_KEY=test \
+            -e NEWS_API_KEY=test \
+            gemini-playground:ci
+      - name: Smoke test — wait for /api/v1/health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/api/v1/health; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i: not ready, retrying in 2s..."
+            sleep 2
+          done
+          echo "Smoke test timed out after 60s"
+          docker logs app
+          exit 1
