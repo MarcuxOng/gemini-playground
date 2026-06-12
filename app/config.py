@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     gcp_project_id: str
     gcp_region: str = "asia-southeast1"
     gcs_bucket: str | None = None
+    gcp_service_account_email: str | None = None
 
     # Tools API keys
     alpha_vantage_api_key: str

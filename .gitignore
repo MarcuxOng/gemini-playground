@@ -101,6 +101,7 @@ misc/
 .claude/
 *CLAUDE.md
 *AGENT.md
+*.json
 
 # mypy
 .mypy_cache/

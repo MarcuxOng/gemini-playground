@@ -45,6 +45,7 @@ class ProviderInput(BaseModel):
     prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url", "location"]] = []
+    cache_id: str | None = None
 
     @field_validator("attachments")
     @classmethod
@@ -88,6 +89,7 @@ async def gemini(
         db=db,
         owner_id=str(api_key.id),
         native_tools=cast(list[str], body.native_tools),
+        cache_id=body.cache_id,
     )
 
     return APIResponse(data=response)
@@ -134,6 +136,7 @@ async def gemini_stream(
                 db=db,
                 owner_id=str(api_key.id),
                 native_tools=cast(list[str], body.native_tools),
+                cache_id=body.cache_id,
             ):
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'thread_id': None})}\n\n"

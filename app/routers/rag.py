@@ -39,7 +39,8 @@ async def ingest_documents(
     """
     try:
         text = sanitize_prompt(body.text)
-        num_chunks = await run_in_threadpool(ingest_service, text, api_key.id)
+        owner_key = str(api_key.id)
+        num_chunks = await run_in_threadpool(ingest_service, text, owner_id=owner_key)
         return APIResponse(
             data={
                 "message": "Successfully ingested text",
@@ -66,8 +67,9 @@ async def query_rag(
     """
     try:
         query = sanitize_prompt(body.query)
+        owner_key = str(api_key.id)
         response = await run_in_threadpool(
-            query_service, query, body.model, body.provider, api_key.id
+            query_service, query, body.model, body.provider, owner_id=owner_key
         )
         return APIResponse(data={"query": body.query, "response": response})
     except HTTPException:

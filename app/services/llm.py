@@ -53,6 +53,11 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatG
             logger.warning(f"Vertex AI initialization check failed: {e}")
 
     # Fallback to Google AI Studio (local dev only — never runs in production)
+    if _IS_PRODUCTION:
+        raise RuntimeError(
+            "GCP project ID not configured in production. "
+            "Set GCP_PROJECT_ID env var or ensure ADC is available."
+        )
     logger.info("Using Google AI Studio path")
     return ChatGoogleGenerativeAI(
         model=model_name,

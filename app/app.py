@@ -44,8 +44,8 @@ app.add_middleware(UsageLoggingMiddleware)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
-app.add_exception_handler(SafetyBlockError, safety_block_exception_handler)  # type: ignore[arg-type]
-app.add_exception_handler(InputSanitizationError, input_sanitization_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(SafetyBlockError, safety_block_exception_handler)
+app.add_exception_handler(InputSanitizationError, input_sanitization_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 

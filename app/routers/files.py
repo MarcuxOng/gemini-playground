@@ -127,15 +127,20 @@ async def delete_file(
 
         # Delete from DB first to avoid orphaned rows if commit fails
         gemini_file_name = str(file_rec.gemini_file_name)
+        gemini_file_uri = str(file_rec.gemini_file_uri)
         db.delete(file_rec)
         db.commit()
 
-        # Delete from Gemini Files API (best-effort after DB commit)
+        # Delete from storage (best-effort after DB commit)
         try:
-            await run_in_threadpool(delete_file_from_gemini, gemini_file_name=gemini_file_name)
+            await run_in_threadpool(
+                delete_file_from_gemini,
+                gemini_file_name=gemini_file_name,
+                gemini_file_uri=gemini_file_uri,
+            )
         except Exception:
             logger.exception(
-                f"Failed to delete Gemini file {gemini_file_name}; DB record already removed"
+                f"Failed to delete remote file {gemini_file_name}; DB record already removed"
             )
 
         logger.info(f"Deleted file record {file_id} (Gemini: {gemini_file_name})")

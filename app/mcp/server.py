@@ -36,8 +36,22 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # FastMCP SSE transport passes through HTTP headers
         if request.url.path.startswith("/mcp"):
+            client_ip = (
+                request.client.host
+                if request.client
+                else (
+                    (request.headers.get("x-forwarded-for") or "unknown,unknown")
+                    .split(",")[0]
+                    .strip()
+                )
+            )
+            if not _mcp_rate_limiter.hit(_mcp_rate_limit, "mcp", client_ip):
+                return JSONResponse(
+                    {"error": "Rate limit exceeded. Max 60 requests/minute per IP."},
+                    status_code=429,
+                )
+
             api_key = request.headers.get("x-api-key")
             if not api_key:
                 return JSONResponse({"error": "Unauthorized: Missing API Key"}, status_code=401)
@@ -50,13 +64,6 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
 
             if not authenticated:
                 return JSONResponse({"error": "Unauthorized: Invalid API Key"}, status_code=401)
-
-            client_ip = request.client.host if request.client else "unknown"
-            if not _mcp_rate_limiter.hit(_mcp_rate_limit, "mcp", client_ip):
-                return JSONResponse(
-                    {"error": "Rate limit exceeded. Max 60 requests/minute per IP."},
-                    status_code=429,
-                )
 
             return await call_next(request)
         return await call_next(request)

@@ -3,19 +3,23 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client
+from app.config import build_genai_client, settings
 from app.database.models import UploadedFile
 from app.services.llm import build_llm
+from app.utils.gcs import delete_from_gcs, upload_to_gcs
 
 logger = logging.getLogger(__name__)
 client = build_genai_client()
 
+# Keep in sync with _SAFETY_SETTINGS dict in app/services/llm.py — update both when changing thresholds or categories so raw client and LangChain paths stay consistent.
 SAFETY_SETTINGS = [
     types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_LOW_AND_ABOVE"),
     types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_LOW_AND_ABOVE"),
@@ -51,6 +55,91 @@ def _check_safety_block(response: types.GenerateContentResponse, model: str) -> 
 
 def _log_safety_block(model: str, categories: list[str]) -> None:
     logger.warning(json.dumps({"event": "safety_block", "model": model, "categories": categories}))
+
+
+def _log_citation_events(response: types.GenerateContentResponse, model: str) -> None:
+    """Extract and log structured citation metadata from a Gemini response.
+
+    Inspects grounding_metadata (grounding_chunks, grounding_supports,
+    search_entry_point) and citation_metadata (citations with uri, title,
+    start/end indices, license, publication_date) on each candidate.
+    """
+    for candidate in getattr(response, "candidates", []) or []:
+        citation_data: dict[str, Any] = {}
+
+        gm = getattr(candidate, "grounding_metadata", None)
+        if gm:
+            grounding_chunks_list = getattr(gm, "grounding_chunks", []) or []
+            if grounding_chunks_list:
+                chunks_data: list[dict[str, Any]] = []
+                for gc in grounding_chunks_list:
+                    chunk_entry: dict[str, Any] = {}
+                    if getattr(gc, "web", None):
+                        chunk_entry["type"] = "web"
+                        chunk_entry["title"] = gc.web.title
+                        chunk_entry["uri"] = gc.web.uri
+                    if getattr(gc, "retrieved_context", None):
+                        chunk_entry["type"] = "retrieved_context"
+                        chunk_entry["title"] = gc.retrieved_context.title
+                        chunk_entry["uri"] = gc.retrieved_context.uri
+                    if getattr(gc, "image", None):
+                        chunk_entry["type"] = "image"
+                    if getattr(gc, "maps", None):
+                        chunk_entry["type"] = "maps"
+                    chunks_data.append(chunk_entry)
+                citation_data["grounding_chunks"] = chunks_data
+
+            grounding_supports = getattr(gm, "grounding_supports", []) or []
+            if grounding_supports:
+                supports_data: list[dict[str, Any]] = []
+                for gs in grounding_supports:
+                    segment = getattr(gs, "segment", None)
+                    supports_data.append(
+                        {
+                            "segment_text": getattr(segment, "text", None) if segment else None,
+                            "segment_start_index": (
+                                getattr(segment, "start_index", None) if segment else None
+                            ),
+                            "segment_end_index": (
+                                getattr(segment, "end_index", None) if segment else None
+                            ),
+                            "grounding_chunk_indices": list(
+                                getattr(gs, "grounding_chunk_indices", []) or []
+                            ),
+                        }
+                    )
+                citation_data["grounding_supports"] = supports_data
+
+            sep = getattr(gm, "search_entry_point", None)
+            if sep:
+                citation_data["search_entry_point"] = getattr(sep, "rendered_content", None)
+
+        cm = getattr(candidate, "citation_metadata", None)
+        if cm:
+            citations_list = getattr(cm, "citations", []) or []
+            if citations_list:
+                cites_data: list[dict[str, Any]] = []
+                for c in citations_list:
+                    pub_date = getattr(c, "publication_date", None)
+                    cites_data.append(
+                        {
+                            "uri": getattr(c, "uri", None),
+                            "title": getattr(c, "title", None),
+                            "start_index": getattr(c, "start_index", None),
+                            "end_index": getattr(c, "end_index", None),
+                            "license": getattr(c, "license", None),
+                            "publication_date": str(pub_date) if pub_date else None,
+                        }
+                    )
+                citation_data["citations"] = cites_data
+
+        if citation_data:
+            logger.info(
+                json.dumps(
+                    {"event": "citation", "model": model, "citation_data": citation_data},
+                    default=str,
+                )
+            )
 
 
 def list_gemini_models() -> list[str]:
@@ -91,28 +180,60 @@ def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> l
     return resolved
 
 
-def upload_file_to_gemini(file_content: bytes, display_name: str, mime_type: str) -> types.File:
-    """Uploads file content directly to Gemini Files API."""
+class _FileInfo:
+    """Minimal container for uploaded file metadata. Mirrors types.File interface."""
+
+    def __init__(self, name: str, uri: str) -> None:
+        self.name = name
+        self.uri = uri
+
+
+def _use_production_storage() -> str:
+    """Return GCS bucket name if production storage should be used, empty string otherwise."""
+    if os.getenv("ENV") == "production":
+        bucket = os.getenv("GCS_BUCKET", "") or settings.gcs_bucket or ""
+        return bucket
+    return ""
+
+
+def upload_file_to_gemini(file_content: bytes, display_name: str, mime_type: str) -> _FileInfo:
+    """Uploads file content, routing to GCS in production or Gemini Files API in dev."""
     try:
+        bucket = _use_production_storage()
+        if bucket:
+            logger.info(f"Uploading file '{display_name}' to GCS ({mime_type})")
+            blob_name = f"{display_name}_{uuid.uuid4().hex[:8]}"
+            gcs_path = f"uploads/{blob_name}"
+            upload_to_gcs(file_content, gcs_path, mime_type)
+            uri = f"gs://{bucket}/{gcs_path}"
+            return _FileInfo(name=gcs_path, uri=uri)
+
         logger.info(f"Uploading file '{display_name}' ({mime_type}) to Gemini Files API")
         file_io = io.BytesIO(file_content)
         uploaded = client.files.upload(
             file=file_io,
             config=types.UploadFileConfig(display_name=display_name, mime_type=mime_type),
         )
-        return uploaded
+        name = uploaded.name or f"files/{display_name}"
+        uri = uploaded.uri or ""
+        return _FileInfo(name=name, uri=uri)
     except Exception as e:
-        logger.error(f"Error uploading file to Gemini Files API: {e}")
+        logger.error(f"Error uploading file: {e}")
         raise
 
 
-def delete_file_from_gemini(gemini_file_name: str) -> None:
-    """Deletes file from Gemini Files API."""
+def delete_file_from_gemini(gemini_file_name: str, gemini_file_uri: str = "") -> None:
+    """Deletes a file from Gemini Files API or GCS depending on URI prefix."""
     try:
+        if gemini_file_name.startswith("uploads/") and gemini_file_uri.startswith("gs://"):
+            logger.info(f"Deleting file '{gemini_file_name}' from GCS")
+            delete_from_gcs(gemini_file_name)
+            return
+
         logger.info(f"Deleting file '{gemini_file_name}' from Gemini Files API")
         client.files.delete(name=gemini_file_name)
     except Exception as e:
-        logger.error(f"Error deleting file from Gemini Files API: {e}")
+        logger.error(f"Error deleting file: {e}")
         raise
 
 
@@ -122,7 +243,13 @@ def build_native_tools(
     url_context: bool = False,
     location: bool = False,
 ) -> list[types.Tool]:
-    """Build a list of native tools for the Gemini model."""
+    """Build a list of native tools for the Gemini model.
+
+    :param grounding: Enable Google Search native tool to ground responses with web results.
+    :param code_exec: Enable code_execution tool for sandboxed code evaluation.
+    :param url_context: Enable url_context tool to fetch and reason over web pages.
+    :param location: Enable Google Maps native tool to provide location/context via google_maps.
+    """
     native_tools: list[types.Tool] = []
     if grounding:
         native_tools.append(types.Tool(google_search=types.GoogleSearch()))
@@ -142,6 +269,7 @@ def gemini_service(
     db: Session | None = None,
     owner_id: str | None = None,
     native_tools: list[str] | None = None,
+    cache_id: str | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
@@ -150,7 +278,7 @@ def gemini_service(
     try:
         if attachments and (not db or not owner_id):
             raise ValueError("attachments require both db and owner_id to be provided")
-        if (attachments and db and owner_id) or native_tools:
+        if (attachments and db and owner_id) or native_tools or cache_id:
             logger.info(
                 f"Generating content with attachments/native_tools using raw client: {model}"
             )
@@ -179,11 +307,13 @@ def gemini_service(
             config = types.GenerateContentConfig(
                 tools=tools_config,
                 safety_settings=SAFETY_SETTINGS,
+                cached_content=cache_id,
             )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
             response = client.models.generate_content(model=model, contents=contents, config=config)
             _check_safety_block(response, model)
+            _log_citation_events(response, model)
             text = str(response.text or "")
 
             # Format and append grounding sources if search was enabled and sources found
@@ -208,8 +338,14 @@ def gemini_service(
             llm = build_llm(model)
             llm_response = llm.invoke(prompt)
             if llm_response.response_metadata.get("finish_reason") == "SAFETY":
-                _log_safety_block(model, [])
-                raise SafetyBlockError([])
+                blocked_categories = llm_response.response_metadata.get("safety_ratings", []) or []
+                categories = [
+                    str(r.get("category", "UNKNOWN"))
+                    for r in blocked_categories
+                    if r.get("blocked", False)
+                ]
+                _log_safety_block(model, categories or ["UNKNOWN"])
+                raise SafetyBlockError(categories or ["UNKNOWN"])
             return str(llm_response.content)
 
     except Exception as e:
@@ -275,6 +411,7 @@ async def gemini_stream_service(
     db: Session | None = None,
     owner_id: str | None = None,
     native_tools: list[str] | None = None,
+    cache_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     try:
@@ -282,7 +419,7 @@ async def gemini_stream_service(
             raise ValueError("attachments require both db and owner_id to be provided")
         logger.info(f"Starting Gemini streaming generation with model: {model}")
         contents: Any = prompt
-        if (attachments and db and owner_id) or native_tools:
+        if (attachments and db and owner_id) or native_tools or cache_id:
             contents = []
             if attachments and db and owner_id:
                 resolved = resolve_attachments(attachments, db, owner_id)
@@ -305,6 +442,7 @@ async def gemini_stream_service(
         config = types.GenerateContentConfig(
             tools=tools_config,
             safety_settings=SAFETY_SETTINGS,
+            cached_content=cache_id,
         )
 
         async_client = client.aio
@@ -315,6 +453,8 @@ async def gemini_stream_service(
         async for chunk in response:
             if chunk.text:
                 yield chunk.text
+
+            _log_citation_events(chunk, model)
 
             # Check for grounding metadata in candidates
             for candidate in getattr(chunk, "candidates", []) or []:
