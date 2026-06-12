@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.routers.agents import router as agents_router
 from app.routers.auth import router as auth_router
+from app.routers.caches import router as caches_router
 from app.routers.evals import router as evals_router
 from app.routers.files import router as files_router
 from app.routers.gemini import router as gemini_router
@@ -22,4 +23,5 @@ all_routers = [
     files_router,
     live_router,
     imagen_router,
+    caches_router,
 ]

@@ -142,6 +142,7 @@ def gemini_service(
     db: Session | None = None,
     owner_id: str | None = None,
     native_tools: list[str] | None = None,
+    cache_id: str | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
@@ -150,7 +151,7 @@ def gemini_service(
     try:
         if attachments and (not db or not owner_id):
             raise ValueError("attachments require both db and owner_id to be provided")
-        if (attachments and db and owner_id) or native_tools:
+        if (attachments and db and owner_id) or native_tools or cache_id:
             logger.info(
                 f"Generating content with attachments/native_tools using raw client: {model}"
             )
@@ -179,6 +180,7 @@ def gemini_service(
             config = types.GenerateContentConfig(
                 tools=tools_config,
                 safety_settings=SAFETY_SETTINGS,
+                cached_content=cache_id,
             )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
@@ -275,6 +277,7 @@ async def gemini_stream_service(
     db: Session | None = None,
     owner_id: str | None = None,
     native_tools: list[str] | None = None,
+    cache_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     try:
@@ -282,7 +285,7 @@ async def gemini_stream_service(
             raise ValueError("attachments require both db and owner_id to be provided")
         logger.info(f"Starting Gemini streaming generation with model: {model}")
         contents: Any = prompt
-        if (attachments and db and owner_id) or native_tools:
+        if (attachments and db and owner_id) or native_tools or cache_id:
             contents = []
             if attachments and db and owner_id:
                 resolved = resolve_attachments(attachments, db, owner_id)
@@ -305,6 +308,7 @@ async def gemini_stream_service(
         config = types.GenerateContentConfig(
             tools=tools_config,
             safety_settings=SAFETY_SETTINGS,
+            cached_content=cache_id,
         )
 
         async_client = client.aio
