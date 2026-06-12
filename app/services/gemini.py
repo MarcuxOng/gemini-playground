@@ -16,6 +16,7 @@ from app.services.llm import build_llm
 logger = logging.getLogger(__name__)
 client = build_genai_client()
 
+# Keep in sync with _SAFETY_SETTINGS dict in app/services/llm.py — update both when changing thresholds or categories so raw client and LangChain paths stay consistent.
 SAFETY_SETTINGS = [
     types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_LOW_AND_ABOVE"),
     types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_LOW_AND_ABOVE"),
@@ -122,7 +123,13 @@ def build_native_tools(
     url_context: bool = False,
     location: bool = False,
 ) -> list[types.Tool]:
-    """Build a list of native tools for the Gemini model."""
+    """Build a list of native tools for the Gemini model.
+
+    :param grounding: Enable Google Search native tool to ground responses with web results.
+    :param code_exec: Enable code_execution tool for sandboxed code evaluation.
+    :param url_context: Enable url_context tool to fetch and reason over web pages.
+    :param location: Enable Google Maps native tool to provide location/context via google_maps.
+    """
     native_tools: list[types.Tool] = []
     if grounding:
         native_tools.append(types.Tool(google_search=types.GoogleSearch()))
@@ -210,8 +217,14 @@ def gemini_service(
             llm = build_llm(model)
             llm_response = llm.invoke(prompt)
             if llm_response.response_metadata.get("finish_reason") == "SAFETY":
-                _log_safety_block(model, [])
-                raise SafetyBlockError([])
+                blocked_categories = llm_response.response_metadata.get("safety_ratings", []) or []
+                categories = [
+                    str(r.get("category", "UNKNOWN"))
+                    for r in blocked_categories
+                    if r.get("blocked", False)
+                ]
+                _log_safety_block(model, categories or ["UNKNOWN"])
+                raise SafetyBlockError(categories or ["UNKNOWN"])
             return str(llm_response.content)
 
     except Exception as e:
