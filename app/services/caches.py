@@ -37,7 +37,7 @@ def create_context_cache(
         "cache_id": str(cache.name or ""),
         "model": str(cache.model or model),
         "display_name": str(cache.display_name or ""),
-        "ttl": str(cache.ttl) if cache.ttl else ttl,
+        "ttl": str(getattr(cache, "ttl", None) or ttl),
         "create_time": str(cache.create_time) if cache.create_time else None,
         "expire_time": str(cache.expire_time) if cache.expire_time else None,
     }
@@ -50,7 +50,7 @@ def get_cache(cache_id: str) -> dict[str, Any]:
         "cache_id": str(cache.name or cache_id),
         "model": str(cache.model or ""),
         "display_name": str(cache.display_name or ""),
-        "ttl": str(cache.ttl) if cache.ttl else None,
+        "ttl": str(_ttl) if (_ttl := getattr(cache, "ttl", None)) else None,
         "create_time": str(cache.create_time) if cache.create_time else None,
         "expire_time": str(cache.expire_time) if cache.expire_time else None,
     }
@@ -66,7 +66,7 @@ def list_caches() -> list[dict[str, Any]]:
                 "cache_id": str(cache.name or ""),
                 "model": str(cache.model or ""),
                 "display_name": str(cache.display_name or ""),
-                "ttl": str(cache.ttl) if cache.ttl else None,
+                "ttl": str(_ttl) if (_ttl := getattr(cache, "ttl", None)) else None,
                 "create_time": str(cache.create_time) if cache.create_time else None,
                 "expire_time": str(cache.expire_time) if cache.expire_time else None,
             }
@@ -87,7 +87,7 @@ def update_cache_ttl(cache_id: str, ttl: str) -> dict[str, Any]:
         "cache_id": str(cache.name or cache_id),
         "model": str(cache.model or ""),
         "display_name": str(cache.display_name or ""),
-        "ttl": str(cache.ttl) if cache.ttl else ttl,
+        "ttl": str(getattr(cache, "ttl", None) or ttl),
         "create_time": str(cache.create_time) if cache.create_time else None,
         "expire_time": str(cache.expire_time) if cache.expire_time else None,
     }

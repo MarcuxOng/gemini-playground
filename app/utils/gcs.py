@@ -36,14 +36,14 @@ def upload_to_gcs(
     blob.upload_from_string(data, content_type=content_type)
 
     try:
-        sign_kwargs: dict = {"expiration": timedelta(hours=1)}
+        sign_kwargs: dict[str, object] = {"expiration": timedelta(hours=1)}
         if settings.gcp_service_account_email:
             sign_kwargs["service_account_email"] = settings.gcp_service_account_email
-        url = blob.generate_signed_url(**sign_kwargs)  # type: ignore[arg-type]
+        url = blob.generate_signed_url(**sign_kwargs)
         return str(url)
     except Exception:
         logger.warning("Signed URL generation failed; falling back to public URL")
-        return blob.public_url
+        return str(blob.public_url)
 
 
 def delete_from_gcs(gcs_path: str) -> None:
