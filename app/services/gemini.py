@@ -3,15 +3,18 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client
+from app.config import build_genai_client, settings
 from app.database.models import UploadedFile
 from app.services.llm import build_llm
+from app.utils.gcs import delete_from_gcs, upload_to_gcs
 
 logger = logging.getLogger(__name__)
 client = build_genai_client()
@@ -177,28 +180,60 @@ def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> l
     return resolved
 
 
-def upload_file_to_gemini(file_content: bytes, display_name: str, mime_type: str) -> types.File:
-    """Uploads file content directly to Gemini Files API."""
+class _FileInfo:
+    """Minimal container for uploaded file metadata. Mirrors types.File interface."""
+
+    def __init__(self, name: str, uri: str) -> None:
+        self.name = name
+        self.uri = uri
+
+
+def _use_production_storage() -> str:
+    """Return GCS bucket name if production storage should be used, empty string otherwise."""
+    if os.getenv("ENV") == "production":
+        bucket = os.getenv("GCS_BUCKET", "") or settings.gcs_bucket or ""
+        return bucket
+    return ""
+
+
+def upload_file_to_gemini(file_content: bytes, display_name: str, mime_type: str) -> _FileInfo:
+    """Uploads file content, routing to GCS in production or Gemini Files API in dev."""
     try:
+        bucket = _use_production_storage()
+        if bucket:
+            logger.info(f"Uploading file '{display_name}' to GCS ({mime_type})")
+            blob_name = f"{display_name}_{uuid.uuid4().hex[:8]}"
+            gcs_path = f"uploads/{blob_name}"
+            upload_to_gcs(file_content, gcs_path, mime_type)
+            uri = f"gs://{bucket}/{gcs_path}"
+            return _FileInfo(name=gcs_path, uri=uri)
+
         logger.info(f"Uploading file '{display_name}' ({mime_type}) to Gemini Files API")
         file_io = io.BytesIO(file_content)
         uploaded = client.files.upload(
             file=file_io,
             config=types.UploadFileConfig(display_name=display_name, mime_type=mime_type),
         )
-        return uploaded
+        name = uploaded.name or f"files/{display_name}"
+        uri = uploaded.uri or ""
+        return _FileInfo(name=name, uri=uri)
     except Exception as e:
-        logger.error(f"Error uploading file to Gemini Files API: {e}")
+        logger.error(f"Error uploading file: {e}")
         raise
 
 
-def delete_file_from_gemini(gemini_file_name: str) -> None:
-    """Deletes file from Gemini Files API."""
+def delete_file_from_gemini(gemini_file_name: str, gemini_file_uri: str = "") -> None:
+    """Deletes a file from Gemini Files API or GCS depending on URI prefix."""
     try:
+        if gemini_file_name.startswith("uploads/") and gemini_file_uri.startswith("gs://"):
+            logger.info(f"Deleting file '{gemini_file_name}' from GCS")
+            delete_from_gcs(gemini_file_name)
+            return
+
         logger.info(f"Deleting file '{gemini_file_name}' from Gemini Files API")
         client.files.delete(name=gemini_file_name)
     except Exception as e:
-        logger.error(f"Error deleting file from Gemini Files API: {e}")
+        logger.error(f"Error deleting file: {e}")
         raise
 
 

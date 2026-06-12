@@ -1,42 +1,35 @@
 from __future__ import annotations
 
+import base64
 import logging
+import os
 import uuid
-from datetime import timedelta
 
-from google.cloud import storage
 from google.genai import types
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.config import build_genai_client, settings
+from app.config import build_genai_client
+from app.utils.gcs import upload_to_gcs
 
 logger = logging.getLogger(__name__)
 client = build_genai_client()
 
 
-def upload_to_gcs(data: bytes, filename: str, content_type: str = "image/png") -> str:
-    """Uploads data to GCS and returns a signed URL if possible, or a public URL."""
-    try:
-        if not settings.gcs_bucket:
-            logger.warning("GCS_BUCKET not set. Returning dummy URL.")
-            return f"https://placeholder.com/{filename}"
+def _use_gcs() -> bool:
+    return os.getenv("ENV") == "production" and bool(os.getenv("GCS_BUCKET", ""))
 
-        try:
-            storage_client = storage.Client()
-        except Exception as cred_err:
-            logger.error(f"Failed to initialize GCS client (ADC issue?): {cred_err}")
-            return f"https://error-placeholder.com/{filename}"
 
-        bucket = storage_client.bucket(settings.gcs_bucket)
-        blob = bucket.blob(f"imagen/{filename}")
-        blob.upload_from_string(data, content_type=content_type)
+def _image_bytes_to_url(data: bytes, mime_type: str = "image/png") -> str:
+    """Return a base64 data URL for use in dev (no GCS dependency)."""
+    b64 = base64.b64encode(data).decode("ascii")
+    return f"data:{mime_type};base64,{b64}"
 
-        # Generate a signed URL valid for 1 hour
-        url = blob.generate_signed_url(expiration=timedelta(hours=1))
-        return str(url) if url else f"https://error-placeholder.com/{filename}"
-    except Exception as e:
-        logger.error(f"Error uploading to GCS: {e}")
-        return f"https://error-placeholder.com/{filename}"
+
+def _store_image(image_bytes: bytes, filepath: str, mime_type: str = "image/png") -> str:
+    """Store generated image: GCS in production, base64 data URL in dev."""
+    if _use_gcs():
+        return upload_to_gcs(image_bytes, filepath, mime_type)
+    return _image_bytes_to_url(image_bytes, mime_type)
 
 
 @retry(
@@ -65,7 +58,9 @@ def generate_image_service(prompt: str, model: str = "imagen-4.0-generate-001") 
                 # The image data is in generated_image.image.data
                 if generated_image.image and generated_image.image.image_bytes:
                     filename = f"{uuid.uuid4()}_{i}.png"
-                    url = upload_to_gcs(generated_image.image.image_bytes, filename)
+                    url = _store_image(
+                        generated_image.image.image_bytes, f"imagen/{filename}", "image/png"
+                    )
                     urls.append(url)
 
         return urls
@@ -105,7 +100,9 @@ def edit_image_service(
             for i, generated_image in enumerate(response.generated_images):
                 if generated_image.image and generated_image.image.image_bytes:
                     filename = f"{uuid.uuid4()}_edit_{i}.png"
-                    url = upload_to_gcs(generated_image.image.image_bytes, filename)
+                    url = _store_image(
+                        generated_image.image.image_bytes, f"imagen/{filename}", "image/png"
+                    )
                     urls.append(url)
 
         return urls
