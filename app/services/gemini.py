@@ -54,6 +54,91 @@ def _log_safety_block(model: str, categories: list[str]) -> None:
     logger.warning(json.dumps({"event": "safety_block", "model": model, "categories": categories}))
 
 
+def _log_citation_events(response: types.GenerateContentResponse, model: str) -> None:
+    """Extract and log structured citation metadata from a Gemini response.
+
+    Inspects grounding_metadata (grounding_chunks, grounding_supports,
+    search_entry_point) and citation_metadata (citations with uri, title,
+    start/end indices, license, publication_date) on each candidate.
+    """
+    for candidate in getattr(response, "candidates", []) or []:
+        citation_data: dict[str, Any] = {}
+
+        gm = getattr(candidate, "grounding_metadata", None)
+        if gm:
+            grounding_chunks_list = getattr(gm, "grounding_chunks", []) or []
+            if grounding_chunks_list:
+                chunks_data: list[dict[str, Any]] = []
+                for gc in grounding_chunks_list:
+                    chunk_entry: dict[str, Any] = {}
+                    if getattr(gc, "web", None):
+                        chunk_entry["type"] = "web"
+                        chunk_entry["title"] = gc.web.title
+                        chunk_entry["uri"] = gc.web.uri
+                    if getattr(gc, "retrieved_context", None):
+                        chunk_entry["type"] = "retrieved_context"
+                        chunk_entry["title"] = gc.retrieved_context.title
+                        chunk_entry["uri"] = gc.retrieved_context.uri
+                    if getattr(gc, "image", None):
+                        chunk_entry["type"] = "image"
+                    if getattr(gc, "maps", None):
+                        chunk_entry["type"] = "maps"
+                    chunks_data.append(chunk_entry)
+                citation_data["grounding_chunks"] = chunks_data
+
+            grounding_supports = getattr(gm, "grounding_supports", []) or []
+            if grounding_supports:
+                supports_data: list[dict[str, Any]] = []
+                for gs in grounding_supports:
+                    segment = getattr(gs, "segment", None)
+                    supports_data.append(
+                        {
+                            "segment_text": getattr(segment, "text", None) if segment else None,
+                            "segment_start_index": (
+                                getattr(segment, "start_index", None) if segment else None
+                            ),
+                            "segment_end_index": (
+                                getattr(segment, "end_index", None) if segment else None
+                            ),
+                            "grounding_chunk_indices": list(
+                                getattr(gs, "grounding_chunk_indices", []) or []
+                            ),
+                        }
+                    )
+                citation_data["grounding_supports"] = supports_data
+
+            sep = getattr(gm, "search_entry_point", None)
+            if sep:
+                citation_data["search_entry_point"] = getattr(sep, "rendered_content", None)
+
+        cm = getattr(candidate, "citation_metadata", None)
+        if cm:
+            citations_list = getattr(cm, "citations", []) or []
+            if citations_list:
+                cites_data: list[dict[str, Any]] = []
+                for c in citations_list:
+                    pub_date = getattr(c, "publication_date", None)
+                    cites_data.append(
+                        {
+                            "uri": getattr(c, "uri", None),
+                            "title": getattr(c, "title", None),
+                            "start_index": getattr(c, "start_index", None),
+                            "end_index": getattr(c, "end_index", None),
+                            "license": getattr(c, "license", None),
+                            "publication_date": str(pub_date) if pub_date else None,
+                        }
+                    )
+                citation_data["citations"] = cites_data
+
+        if citation_data:
+            logger.info(
+                json.dumps(
+                    {"event": "citation", "model": model, "citation_data": citation_data},
+                    default=str,
+                )
+            )
+
+
 def list_gemini_models() -> list[str]:
     try:
         logger.info("Fetching Gemini models...")
@@ -193,6 +278,7 @@ def gemini_service(
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
             response = client.models.generate_content(model=model, contents=contents, config=config)
             _check_safety_block(response, model)
+            _log_citation_events(response, model)
             text = str(response.text or "")
 
             # Format and append grounding sources if search was enabled and sources found
@@ -332,6 +418,8 @@ async def gemini_stream_service(
         async for chunk in response:
             if chunk.text:
                 yield chunk.text
+
+            _log_citation_events(chunk, model)
 
             # Check for grounding metadata in candidates
             for candidate in getattr(chunk, "candidates", []) or []:
