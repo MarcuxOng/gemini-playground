@@ -29,7 +29,7 @@ def get_wikipedia_summary(query: str) -> str:
         logger.info(f"Fetching Wikipedia summary for: {query}")
         search_url = f"{settings.wikipedia_base_url}"
         headers = {
-            "User-Agent": "Gemini-Playground/1.0 (https://github.com/your-repo; mailto:your-email@example.com) Requests/2.31.0"
+            "User-Agent": "Gemini-Playground/1.0 (https://github.com/MarcuxOng/gemini-playground; mailto:marcuxongzl@gmail.com) Requests/2.31.0"
         }
         search_params: dict[str, str | int] = {
             "action": "query",
