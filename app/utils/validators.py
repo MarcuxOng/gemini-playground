@@ -16,9 +16,12 @@ _ALLOWED_MODEL_PREFIXES = (
 
 
 def _validate_model_name(v: str) -> str:
-    if not any(v.startswith(p) for p in _ALLOWED_MODEL_PREFIXES):
-        raise ValueError(f"Model must start with one of {_ALLOWED_MODEL_PREFIXES}, got: {v!r}")
-    return v
+    for p in _ALLOWED_MODEL_PREFIXES:
+        if v.startswith(p) and len(v) > len(p):
+            return v
+    raise ValueError(
+        f"Model must start with one of {_ALLOWED_MODEL_PREFIXES} and include characters after the prefix, got: {v!r}"
+    )
 
 
 # Drop-in replacement for `str` on any Pydantic model field that accepts a model name.

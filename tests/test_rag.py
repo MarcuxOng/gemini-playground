@@ -23,8 +23,7 @@ def test_ingest_forwards_owner_id(client: TestClient, auth_headers: dict):
         )
 
     assert resp.status_code == 200
-    # ingest_service(text, owner_id) — owner_id is the second positional arg
-    assert mock_ingest.call_args.args[1] == "master"
+    assert mock_ingest.call_args.kwargs.get("owner_id") == "master"
 
 
 def test_query_forwards_owner_id(client: TestClient, auth_headers: dict):
@@ -37,8 +36,7 @@ def test_query_forwards_owner_id(client: TestClient, auth_headers: dict):
         )
 
     assert resp.status_code == 200
-    # query_service(query, model, provider, owner_id) — owner_id is the fourth positional arg
-    assert mock_query.call_args.args[3] == "master"
+    assert mock_query.call_args.kwargs.get("owner_id") == "master"
 
 
 def test_namespace_isolation_between_users():

@@ -441,6 +441,10 @@ async def run_agent_stream_service(
 
         yield f"data: {json.dumps({'type': 'done', 'thread_id': thread.id})}\n\n"
         yield "data: [DONE]\n\n"
+    except SafetyBlockError:
+        yield f"data: {json.dumps({'type': 'safety_block', 'content': 'Content blocked by safety filters'})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'thread_id': thread.id})}\n\n"
+        yield "data: [DONE]\n\n"
     except Exception:
         logger.exception("Error in streaming agent")
         yield f"data: {json.dumps({'type': 'error', 'content': 'Stream failed'})}\n\n"
