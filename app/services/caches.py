@@ -61,14 +61,16 @@ def list_caches() -> list[dict[str, Any]]:
     caches_list = client.caches.list()
     results: list[dict[str, Any]] = []
     for cache in caches_list:
-        results.append({
-            "cache_id": str(cache.name or ""),
-            "model": str(cache.model or ""),
-            "display_name": str(cache.display_name or ""),
-            "ttl": str(cache.ttl) if cache.ttl else None,
-            "create_time": str(cache.create_time) if cache.create_time else None,
-            "expire_time": str(cache.expire_time) if cache.expire_time else None,
-        })
+        results.append(
+            {
+                "cache_id": str(cache.name or ""),
+                "model": str(cache.model or ""),
+                "display_name": str(cache.display_name or ""),
+                "ttl": str(cache.ttl) if cache.ttl else None,
+                "create_time": str(cache.create_time) if cache.create_time else None,
+                "expire_time": str(cache.expire_time) if cache.expire_time else None,
+            }
+        )
     return results
 
 
