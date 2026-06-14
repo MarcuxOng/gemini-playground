@@ -43,7 +43,7 @@ The platform is designed to be **GCP-native** and **stateless**, scaling seamles
           ┌─────────────────────┼─────────────────────────────────────────────┐
           │                     │                                             │
           ▼                     ▼                                             ▼
-   Postgres (Neon)         Gemini / Vertex AI                       Cloud Operations
+   PostgresDB (Neon)       Gemini / Vertex AI                       Cloud Operations
    + VectorDB (Pinecone)   - Gemini Flash 2.x (primary)             Cloud Logging
                            - Imagen 4.0 (generation)                Cloud Trace
                            - Native search grounding                Secret Manager
