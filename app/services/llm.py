@@ -27,8 +27,20 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatG
     """Builds a Gemini LLM via Vertex AI with local fallback to Google AI Studio."""
     logger.info(f"Building Gemini LLM: {model_name}")
 
-    # If we have a project ID, try Vertex AI
+    project_id: str | None = None
     if settings.gcp_project_id:
+        project_id = settings.gcp_project_id
+
+    if not project_id and _IS_PRODUCTION:
+        try:
+            _, adc_project_id = google.auth.default()
+            project_id = adc_project_id
+            if project_id:
+                logger.info(f"Using ADC-discovered project ID: {project_id}")
+        except Exception:
+            pass
+
+    if project_id:
         try:
             # Proactively verify credentials to avoid lazy-init crash during invoke()
             google.auth.default()
@@ -36,7 +48,7 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatG
                 model=model_name,
                 temperature=temperature,
                 location=settings.gcp_region,
-                project=settings.gcp_project_id,
+                project=project_id,
                 safety_settings=_SAFETY_SETTINGS,
             )
         except DefaultCredentialsError:
@@ -55,8 +67,8 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatG
     # Fallback to Google AI Studio (local dev only — never runs in production)
     if _IS_PRODUCTION:
         raise RuntimeError(
-            "GCP project ID not configured in production. "
-            "Set GCP_PROJECT_ID env var or ensure ADC is available."
+            "GCP project ID not configured and not discoverable via ADC in production. "
+            "Set GCP_PROJECT_ID env var or ensure the Cloud Run service account has ADC set up."
         )
     logger.info("Using Google AI Studio path")
     return ChatGoogleGenerativeAI(

@@ -194,7 +194,7 @@ class TestGeminiWithCacheId:
 
         with patch.object(
             mock_gemini_client_global.models, "generate_content", return_value=mock_response
-        ):
+        ) as mock_gen:
             response = client.post(
                 "/api/v1/gemini/",
                 json={
@@ -208,6 +208,9 @@ class TestGeminiWithCacheId:
         assert response.status_code == 200
         body = response.json()
         assert body["data"] == '{"result": "ok"}'
+
+        call_kwargs = mock_gen.call_args.kwargs
+        assert call_kwargs["config"].cached_content is None
 
     def test_stream_with_cache_id_passes_to_service(
         self, client: TestClient, auth_headers, mock_gemini_client_global
