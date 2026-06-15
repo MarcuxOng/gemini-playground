@@ -29,7 +29,7 @@ class DatasetCreate(BaseModel):
 class EvalRunRequest(BaseModel):
     dataset_id: str
     agent_id_or_preset: str
-    model: ModelName
+    model: ModelName = "gemini-2.5-flash"
 
 
 @router.post("/datasets", response_model=APIResponse)

@@ -32,7 +32,7 @@ class AgentCreate(BaseModel):
     description: str | None = None
     system_prompt: str
     tools: list[str]
-    model: ModelName
+    model: ModelName = "gemini-2.5-flash"
 
 
 class AgentResponse(BaseModel):
@@ -50,7 +50,7 @@ class AgentResponse(BaseModel):
 
 
 class AgentRunRequest(BaseModel):
-    model: ModelName | None = None
+    model: ModelName = "gemini-2.5-flash"
     preset: str | None = None  # hardcoded preset name
     agent_id: str | None = None  # DB-backed config id — takes priority
     mcp_server_ids: list[str] | None = None  # external MCP servers to connect to
