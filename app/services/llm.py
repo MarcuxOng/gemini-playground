@@ -7,13 +7,14 @@ import google.auth
 from google.auth.exceptions import DefaultCredentialsError
 from google.genai.types import HarmBlockThreshold, HarmCategory
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_google_vertexai import ChatVertexAI
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_SAFETY_SETTINGS = {
+# Dict format used by ChatGoogleGenerativeAI (both Vertex AI and AI Studio modes).
+# Keep in sync with SAFETY_SETTINGS list in app/services/gemini.py.
+_SAFETY_SETTINGS: dict[HarmCategory, HarmBlockThreshold] = {
     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
     HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
     HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
@@ -23,8 +24,8 @@ _SAFETY_SETTINGS = {
 _IS_PRODUCTION = os.getenv("ENV") == "production"
 
 
-def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatGoogleGenerativeAI:
-    """Builds a Gemini LLM via Vertex AI with local fallback to Google AI Studio."""
+def build_llm(model_name: str, temperature: float = 0.1) -> ChatGoogleGenerativeAI:
+    """Builds a Gemini LLM via ChatGoogleGenerativeAI (Vertex AI prod, AI Studio dev)."""
     logger.info(f"Building Gemini LLM: {model_name}")
 
     project_id: str | None = None
@@ -42,17 +43,15 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatG
 
     if project_id:
         try:
-            # Proactively verify credentials to avoid lazy-init crash during invoke()
             google.auth.default()
-            return ChatVertexAI(
+            return ChatGoogleGenerativeAI(
                 model=model_name,
                 temperature=temperature,
-                location=settings.gcp_region,
                 project=project_id,
+                location=settings.gcp_region,
                 safety_settings=_SAFETY_SETTINGS,
             )
         except DefaultCredentialsError:
-            # In production, ADC must be present — no silent downgrade to AI Studio.
             if _IS_PRODUCTION:
                 raise RuntimeError(
                     "ADC credentials not found in production. "
@@ -64,7 +63,6 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatVertexAI | ChatG
                 raise
             logger.warning(f"Vertex AI initialization check failed: {e}")
 
-    # Fallback to Google AI Studio (local dev only — never runs in production)
     if _IS_PRODUCTION:
         raise RuntimeError(
             "GCP project ID not configured and not discoverable via ADC in production. "
