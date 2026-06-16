@@ -82,9 +82,7 @@ def ingest_service(text: str, owner_id: str | None = None) -> int:
         raise
 
 
-def query_service(
-    query: str, model: str, owner_id: str | None = None
-) -> str:
+def query_service(query: str, model: str, owner_id: str | None = None) -> str:
     """
     Construct a RAG chain and execute a query against the owner's namespace.
 
@@ -103,9 +101,7 @@ def query_service(
                 f"[File: {fd.metadata.get('display_name', 'file')} "
                 f"({fd.metadata.get('mime_type', 'unknown')})]"
             )
-        context = (
-            "\n\n".join(context_parts) if context_parts else "No relevant documents found."
-        )
+        context = "\n\n".join(context_parts) if context_parts else "No relevant documents found."
 
         if not file_docs:
             prompt_text = RAG_PROMPT_TEMPLATE.format(question=query, context=context)
@@ -127,10 +123,7 @@ def query_service(
 
         # GCS URIs (gs://) require Vertex AI — Gemini API client can't read them.
         # Gemini Files API URIs work with either client.
-        has_gcs = any(
-            str(fd.metadata["gemini_file_uri"]).startswith("gs://")
-            for fd in file_docs
-        )
+        has_gcs = any(str(fd.metadata["gemini_file_uri"]).startswith("gs://") for fd in file_docs)
         if has_gcs and settings.gcp_project_id:
             client = genai.Client(
                 vertexai=True,
