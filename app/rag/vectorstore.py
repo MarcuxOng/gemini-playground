@@ -71,6 +71,52 @@ class PineconeStore:
                 docs.append(Document(page_content=text, metadata=res.metadata))
         return docs
 
+    def add_file_documents(self, documents: list[Document]) -> None:
+        """Add multimodal documents that reference Gemini file URIs.
+
+        Generates embeddings from the file URI (not the page_content)
+        using gemini-embedding-2's multimodal embedding space.
+        Each document must have `gemini_file_uri` and `mime_type` in metadata.
+        """
+        ingestion_timestamp = str(int(time.time()))
+        vectors: list[dict[str, Any]] = []
+
+        for i, doc in enumerate(documents):
+            meta: dict[str, Any] = dict(doc.metadata) if doc.metadata else {}
+            file_uri = meta.get("gemini_file_uri", "")
+            mime_type = meta.get("mime_type", "application/octet-stream")
+
+            if not file_uri:
+                logger.warning("Skipping file document without gemini_file_uri in metadata")
+                continue
+
+            meta["text"] = doc.page_content
+            meta["namespace"] = self.namespace
+            meta["source_type"] = "multimodal"
+
+            vector = self.embedding.embed_file_uri(file_uri, mime_type)
+
+            doc_identifier = meta.get("source", meta.get("doc_id", "unknown"))
+            hash_input = f"{self.namespace}_{doc_identifier}_{i}_{ingestion_timestamp}_{file_uri}"
+            content_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+
+            vectors.append(
+                {
+                    "id": f"{self.namespace}_{doc_identifier}_{i}_{content_hash}",
+                    "values": vector,
+                    "metadata": meta,
+                }
+            )
+
+        if vectors:
+            self.index.upsert(
+                vectors=vectors,  # type: ignore[arg-type]
+                namespace=self.namespace,
+            )
+            logger.info(
+                f"Upserted {len(vectors)} multimodal file documents to namespace {self.namespace}"
+            )
+
     def as_retriever(self, search_kwargs: dict[str, Any] | None = None) -> Retriever:
         """Mock LangChain retriever interface."""
         if search_kwargs is None:
