@@ -54,7 +54,7 @@ async def upload_file(
             detail = str(e)
             raise HTTPException(status_code=415, detail=detail) from e
 
-        # Upload to Gemini Files API
+        # Upload to GCS or Gemini Files API
         uploaded = await run_in_threadpool(
             upload_file_to_gemini,
             file_content=content,
@@ -62,7 +62,7 @@ async def upload_file(
             mime_type=mime_type,
         )
 
-        # Create local DB record
+        # Create DB record
         new_file = UploadedFile(
             gemini_file_name=uploaded.name,
             gemini_file_uri=uploaded.uri,

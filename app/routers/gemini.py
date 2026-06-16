@@ -41,7 +41,7 @@ def _validate_attachment_ids(v: list[str]) -> list[str]:
 
 
 class ProviderInput(BaseModel):
-    model: ModelName
+    model: ModelName = "gemini-2.5-flash"
     prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url", "location"]] = []
@@ -54,7 +54,7 @@ class ProviderInput(BaseModel):
 
 
 class StructuredInput(BaseModel):
-    model: ModelName
+    model: ModelName = "gemini-2.5-flash"
     prompt: str = Field(..., max_length=32_000)
     response_schema: dict[str, Any]  # JSON Schema dict
 

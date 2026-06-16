@@ -2,21 +2,16 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 import uuid
 
 from google.genai import types
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import build_genai_client
-from app.utils.gcs import upload_to_gcs
+from app.utils.gcs import get_gcs_bucket_name, upload_to_gcs
 
 logger = logging.getLogger(__name__)
 client = build_genai_client()
-
-
-def _use_gcs() -> bool:
-    return os.getenv("ENV") == "production" and bool(os.getenv("GCS_BUCKET", ""))
 
 
 def _image_bytes_to_url(data: bytes, mime_type: str = "image/png") -> str:
@@ -27,7 +22,7 @@ def _image_bytes_to_url(data: bytes, mime_type: str = "image/png") -> str:
 
 def _store_image(image_bytes: bytes, filepath: str, mime_type: str = "image/png") -> str:
     """Store generated image: GCS in production, base64 data URL in dev."""
-    if _use_gcs():
+    if get_gcs_bucket_name():
         return upload_to_gcs(image_bytes, filepath, mime_type)
     return _image_bytes_to_url(image_bytes, mime_type)
 

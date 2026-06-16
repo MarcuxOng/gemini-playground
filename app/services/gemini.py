@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import json
 import logging
-import os
+import re
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -11,10 +11,10 @@ from typing import Any
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client, settings
+from app.config import build_genai_client
 from app.database.models import UploadedFile
 from app.services.llm import build_llm
-from app.utils.gcs import delete_from_gcs, upload_to_gcs
+from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
 
 logger = logging.getLogger(__name__)
 client = build_genai_client()
@@ -188,21 +188,23 @@ class _FileInfo:
         self.uri = uri
 
 
-def _use_production_storage() -> str:
-    """Return GCS bucket name if production storage should be used, empty string otherwise."""
-    if os.getenv("ENV") == "production":
-        bucket = os.getenv("GCS_BUCKET", "") or settings.gcs_bucket or ""
-        return bucket
-    return ""
+def _sanitize_filename(name: str) -> str:
+    """Sanitize a user-supplied filename for safe use in GCS/blob paths."""
+    sanitized = re.sub(r"[\\/:*?\"<>|]", "_", name)
+    sanitized = re.sub(r"\.{2,}", "_", sanitized)
+    sanitized = re.sub(r"__+", "_", sanitized)
+    sanitized = sanitized.strip("._- ") or "upload"
+    return sanitized[:200]
 
 
 def upload_file_to_gemini(file_content: bytes, display_name: str, mime_type: str) -> _FileInfo:
     """Uploads file content, routing to GCS in production or Gemini Files API in dev."""
     try:
-        bucket = _use_production_storage()
+        bucket = get_gcs_bucket_name()
         if bucket:
             logger.info(f"Uploading file '{display_name}' to GCS ({mime_type})")
-            blob_name = f"{display_name}_{uuid.uuid4().hex[:8]}"
+            safe_name = _sanitize_filename(display_name)
+            blob_name = f"{safe_name}_{uuid.uuid4().hex[:8]}"
             gcs_path = f"uploads/{blob_name}"
             upload_to_gcs(file_content, gcs_path, mime_type)
             uri = f"gs://{bucket}/{gcs_path}"

@@ -33,7 +33,7 @@ def _validate_attachment_ids(v: list[str]) -> list[str]:
 
 
 class CreateCacheInput(BaseModel):
-    model: ModelName
+    model: ModelName = "gemini-2.5-flash"
     attachments: list[str] = []
     system_instruction: str | None = Field(default=None, max_length=32_000)
     display_name: str | None = Field(default=None, max_length=256)

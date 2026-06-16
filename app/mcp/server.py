@@ -37,15 +37,13 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if request.url.path.startswith("/mcp"):
-            client_ip = (
-                request.client.host
-                if request.client
-                else (
-                    (request.headers.get("x-forwarded-for") or "unknown,unknown")
-                    .split(",")[0]
-                    .strip()
-                )
-            )
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                client_ip = forwarded.split(",")[0].strip()
+            elif request.client and request.client.host:
+                client_ip = request.client.host
+            else:
+                client_ip = "unknown"
             if not _mcp_rate_limiter.hit(_mcp_rate_limit, "mcp", client_ip):
                 return JSONResponse(
                     {"error": "Rate limit exceeded. Max 60 requests/minute per IP."},

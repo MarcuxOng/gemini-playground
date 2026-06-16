@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import timedelta
 
 from google.cloud import storage
@@ -11,17 +12,19 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _get_bucket() -> Bucket | None:
-    """Return the GCS bucket object, or None if not configured."""
+def get_gcs_bucket_name() -> str:
+    """Return the GCS bucket name for production storage, empty string otherwise."""
+    if os.getenv("ENV") != "production":
+        return ""
+    return os.getenv("GCS_BUCKET", "") or settings.gcs_bucket or ""
+
+
+def _get_bucket() -> Bucket:
+    """Return the GCS bucket object, or raise ValueError if not configured."""
     if not settings.gcs_bucket:
-        logger.warning("GCS_BUCKET not configured")
-        return None
-    try:
-        client = storage.Client()
-        return client.bucket(settings.gcs_bucket)
-    except Exception as e:
-        logger.error(f"Failed to connect to GCS: {e}")
-        return None
+        raise ValueError("GCS_BUCKET not configured. Set GCS_BUCKET env var.")
+    client = storage.Client()
+    return client.bucket(settings.gcs_bucket)
 
 
 def upload_to_gcs(
@@ -29,8 +32,6 @@ def upload_to_gcs(
 ) -> str:
     """Upload data to GCS at the given path, return a signed URL or public URL."""
     bucket = _get_bucket()
-    if not bucket:
-        return f"https://placeholder.com/{gcs_path}"
 
     blob = bucket.blob(gcs_path)
     blob.upload_from_string(data, content_type=content_type)
@@ -47,10 +48,8 @@ def upload_to_gcs(
 
 
 def delete_from_gcs(gcs_path: str) -> None:
-    """Delete a blob from GCS. No-op if the bucket is not configured."""
+    """Delete a blob from GCS."""
     bucket = _get_bucket()
-    if not bucket:
-        return
     blob = bucket.blob(gcs_path)
     blob.delete()
     logger.info(f"Deleted GCS blob: {gcs_path}")
