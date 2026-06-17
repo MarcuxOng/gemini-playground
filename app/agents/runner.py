@@ -59,7 +59,7 @@ def run_once(
             result = agent.invoke({"messages": [("human", question)]}, config=lg_config)
         except Exception as e:
             logger.exception("Agent invocation failed")
-            raise RuntimeError("Agent invocation failed") from e
+            raise RuntimeError(f"Agent invocation failed: {type(e).__name__}: {e}") from e
 
         content = result["messages"][-1].content
 
