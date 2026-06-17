@@ -164,8 +164,13 @@ def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> l
 
     Only DB-owned UUIDs are accepted; raw URIs are rejected upstream by the
     Pydantic validators on ProviderInput and AgentRunRequest.
+
+    Returns only the valid, owned attachments.  Callers should check the
+    returned list length against the original request length to detect
+    missing / unauthorized files.
     """
     resolved = []
+    skipped = []
     for att in attachments:
         query = db.query(UploadedFile).filter(UploadedFile.id == att)
         if owner_id != "master":
@@ -176,7 +181,13 @@ def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> l
                 {"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)}
             )
         else:
-            logger.warning(f"Attachment {att!r} not found or not owned by {owner_id!r}; skipping")
+            skipped.append(att)
+
+    if skipped:
+        logger.warning(
+            "%d of %d attachment(s) not found or not owned by %r: %s",
+            len(skipped), len(attachments), owner_id, skipped,
+        )
     return resolved
 
 
