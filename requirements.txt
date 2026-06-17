@@ -26,6 +26,7 @@ opentelemetry-exporter-gcp-trace==1.11.0
 opentelemetry-instrumentation-fastapi==0.61b0
 opentelemetry-sdk==1.40.0
 pinecone==8.1.0
+pypdf==5.6.0
 protobuf==5.29.6
 psycopg[binary]==3.3.3
 pydantic==2.12.5
