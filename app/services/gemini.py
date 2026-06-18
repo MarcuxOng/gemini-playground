@@ -317,6 +317,14 @@ def gemini_service(
                     location=location,
                 )
 
+            if cache_id and tools_config:
+                logger.warning(
+                    "native_tools ignored: cannot be combined with cached_content "
+                    "(%s). Tool declarations must be part of the cache.",
+                    cache_id,
+                )
+                tools_config = None
+
             config = types.GenerateContentConfig(
                 tools=tools_config,
                 safety_settings=SAFETY_SETTINGS,
@@ -451,6 +459,14 @@ async def gemini_stream_service(
             tools_config = build_native_tools(
                 grounding=grounding, code_exec=code_exec, url_context=url_context, location=location
             )
+
+        if cache_id and tools_config:
+            logger.warning(
+                "native_tools ignored: cannot be combined with cached_content "
+                "(%s). Tool declarations must be part of the cache.",
+                cache_id,
+            )
+            tools_config = None
 
         config = types.GenerateContentConfig(
             tools=tools_config,
