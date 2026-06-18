@@ -33,7 +33,7 @@ def run_once(
     question: str | list[Any],
     config: AgentConfig | None = None,
     lg_config: dict[str, Any] | None = None,
-) -> str:
+) -> tuple[str, dict[str, int]]:
     """
     Send a single question to the agent and return its final answer.
 
@@ -44,7 +44,7 @@ def run_once(
         lg_config:  Optional LangGraph config (e.g. for thread_id).
 
     Returns:
-        The agent's final response as a plain string.
+        Tuple of (answer string, token_usage dict with input_tokens / output_tokens).
     """
     try:
         if not question or (isinstance(question, str) and not question.strip()):
@@ -63,6 +63,18 @@ def run_once(
 
         content = result["messages"][-1].content
 
+        # Sum token usage across all AI messages in the agent trace
+        input_tokens = 0
+        output_tokens = 0
+        for msg in result.get("messages", []):
+            if hasattr(msg, "usage_metadata") and msg.usage_metadata:
+                um = msg.usage_metadata
+                if hasattr(um, "get"):
+                    input_tokens += int(um.get("input_tokens", 0))
+                    output_tokens += int(um.get("output_tokens", 0))
+
+        token_usage: dict[str, int] = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+
         # Handle Gemini/LangChain returning a list of content blocks instead of a string
         if isinstance(content, list):
             text_parts = []
@@ -79,7 +91,7 @@ def run_once(
             _print_trace(result["messages"])
             print(f"\n  Agent: {answer}\n")
 
-        return answer
+        return answer, token_usage
     except Exception as e:
         logger.error(f"Error in run_once: {e}")
         raise

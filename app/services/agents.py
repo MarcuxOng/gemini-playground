@@ -8,7 +8,7 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
@@ -133,7 +133,7 @@ async def _get_agent(
 
 
 async def run_agent_service(
-    request: AgentRunRequest, db: Session, api_key: APIKey
+    request: AgentRunRequest, db: Session, api_key: APIKey, fastapi_request: Request | None = None
 ) -> AgentRunResponse:
     """
     Unified service for running agents.
@@ -276,11 +276,15 @@ async def run_agent_service(
 
         rag_token = rag_owner_id.set(str(api_key.id))
         try:
-            answer = await run_in_threadpool(
+            answer, token_usage = await run_in_threadpool(
                 run_once, agent, prompt_input, config=config, lg_config=lg_config
             )
         finally:
             rag_owner_id.reset(rag_token)
+
+        if fastapi_request is not None:
+            fastapi_request.state.input_tokens = int(token_usage.get("input_tokens", 0))
+            fastapi_request.state.output_tokens = int(token_usage.get("output_tokens", 0))
 
         # Save messages
         human_msg = ThreadMessage(

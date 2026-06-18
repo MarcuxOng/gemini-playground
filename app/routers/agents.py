@@ -160,7 +160,7 @@ async def run_agent(
     """
     body.prompt = sanitize_prompt(body.prompt)
     logger.info(f"Calling agents API with model: {body.model}")
-    response = await run_agent_service(body, db, api_key)
+    response = await run_agent_service(body, db, api_key, fastapi_request=request)
     return APIResponse(data=response)
 
 

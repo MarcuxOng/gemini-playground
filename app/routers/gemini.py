@@ -91,6 +91,7 @@ async def gemini(
         owner_id=str(api_key.id),
         native_tools=cast(list[str], body.native_tools),
         cache_id=body.cache_id,
+        fastapi_request=request,
     )
 
     return APIResponse(data=response)
@@ -104,7 +105,11 @@ async def gemini_structured(request: Request, body: StructuredInput) -> APIRespo
         f"Calling Structured Gemini API with model: {body.model}, prompt_len: {len(prompt)}"
     )
     response = await run_in_threadpool(
-        structured_service, model=body.model, prompt=prompt, schema=body.response_schema
+        structured_service,
+        model=body.model,
+        prompt=prompt,
+        schema=body.response_schema,
+        fastapi_request=request,
     )
 
     return APIResponse(data=response)
