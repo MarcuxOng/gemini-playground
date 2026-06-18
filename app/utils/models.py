@@ -34,6 +34,10 @@ class BaseRequestModel(BaseModel):
         if not isinstance(data, dict):
             return data
         for field_name, field_info in cls.model_fields.items():
-            if field_name in data and data[field_name] == "" and _accepts_none(field_info.annotation):
+            if (
+                field_name in data
+                and data[field_name] == ""
+                and _accepts_none(field_info.annotation)
+            ):
                 data[field_name] = None
         return data
