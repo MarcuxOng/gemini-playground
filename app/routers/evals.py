@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
@@ -12,6 +12,7 @@ from app.database.models import APIKey, EvalDataset, EvalRun
 from app.services.evals import run_eval
 from app.utils.auth import verify_api_key, verify_master_key
 from app.utils.limiter import limiter
+from app.utils.models import BaseRequestModel
 from app.utils.response import APIResponse
 from app.utils.validators import ModelName
 
@@ -21,12 +22,12 @@ router = APIRouter(
 )
 
 
-class DatasetCreate(BaseModel):
+class DatasetCreate(BaseRequestModel):
     name: str = Field(..., max_length=200)
     cases: list[dict[str, Any]]  # [{input, expected}]
 
 
-class EvalRunRequest(BaseModel):
+class EvalRunRequest(BaseRequestModel):
     dataset_id: str
     agent_id_or_preset: str
     model: ModelName = "gemini-2.5-flash"

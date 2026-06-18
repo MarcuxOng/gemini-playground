@@ -11,12 +11,13 @@ from app.database.models import APIKey, MCPServerConfig
 from app.mcp.client import load_mcp_tools
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
+from app.utils.models import BaseRequestModel
 from app.utils.response import APIResponse
 
 router = APIRouter(prefix="/api/v1/mcp-servers", tags=["MCP Servers"])
 
 
-class MCPServerCreate(BaseModel):
+class MCPServerCreate(BaseRequestModel):
     name: str
     description: str | None = None
     transport: str | None = None  # "sse" or "stdio" (can be inferred)
