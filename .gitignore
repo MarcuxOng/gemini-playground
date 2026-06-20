@@ -99,6 +99,7 @@ conductor/
 # Project specific
 misc/
 .claude/
+skills/
 *CLAUDE.md
 *AGENT.md
 *.json
