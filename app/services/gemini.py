@@ -6,12 +6,15 @@ import logging
 import re
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from google.genai import types
 from sqlalchemy.orm import Session
 
 from app.config import build_genai_client
+
+if TYPE_CHECKING:
+    from fastapi import Request
 from app.database.models import UploadedFile
 from app.services.llm import build_llm
 from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
@@ -164,8 +167,13 @@ def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> l
 
     Only DB-owned UUIDs are accepted; raw URIs are rejected upstream by the
     Pydantic validators on ProviderInput and AgentRunRequest.
+
+    Returns only the valid, owned attachments.  Callers should check the
+    returned list length against the original request length to detect
+    missing / unauthorized files.
     """
     resolved = []
+    skipped = []
     for att in attachments:
         query = db.query(UploadedFile).filter(UploadedFile.id == att)
         if owner_id != "master":
@@ -176,7 +184,16 @@ def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> l
                 {"uri": str(file_rec.gemini_file_uri), "mime_type": str(file_rec.mime_type)}
             )
         else:
-            logger.warning(f"Attachment {att!r} not found or not owned by {owner_id!r}; skipping")
+            skipped.append(att)
+
+    if skipped:
+        logger.warning(
+            "%d of %d attachment(s) not found or not owned by %r: %s",
+            len(skipped),
+            len(attachments),
+            owner_id,
+            skipped,
+        )
     return resolved
 
 
@@ -264,6 +281,30 @@ def build_native_tools(
     return native_tools
 
 
+def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
+    """Record token counts on request.state if fastapi_request is provided.
+
+    Accepts either a raw genai types.GenerateContentResponseUsageMetadata
+    (with prompt_token_count / candidates_token_count) or a LangChain
+    UsageMetadata dict (with input_tokens / output_tokens).
+    """
+    if fastapi_request is None or usage_metadata is None:
+        return
+    try:
+        if hasattr(usage_metadata, "prompt_token_count"):
+            fastapi_request.state.input_tokens = int(
+                getattr(usage_metadata, "prompt_token_count", 0) or 0
+            )
+            fastapi_request.state.output_tokens = int(
+                getattr(usage_metadata, "candidates_token_count", 0) or 0
+            )
+        else:
+            fastapi_request.state.input_tokens = int(usage_metadata.get("input_tokens", 0))
+            fastapi_request.state.output_tokens = int(usage_metadata.get("output_tokens", 0))
+    except Exception:
+        pass  # token tracking is best-effort
+
+
 def gemini_service(
     model: str,
     prompt: str,
@@ -272,6 +313,7 @@ def gemini_service(
     owner_id: str | None = None,
     native_tools: list[str] | None = None,
     cache_id: str | None = None,
+    fastapi_request: Request | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
@@ -306,6 +348,14 @@ def gemini_service(
                     location=location,
                 )
 
+            if cache_id and tools_config:
+                logger.warning(
+                    "native_tools ignored: cannot be combined with cached_content "
+                    "(%s). Tool declarations must be part of the cache.",
+                    cache_id,
+                )
+                tools_config = None
+
             config = types.GenerateContentConfig(
                 tools=tools_config,
                 safety_settings=SAFETY_SETTINGS,
@@ -316,6 +366,7 @@ def gemini_service(
             response = client.models.generate_content(model=model, contents=contents, config=config)
             _check_safety_block(response, model)
             _log_citation_events(response, model)
+            _set_request_tokens(fastapi_request, response.usage_metadata)
             text = str(response.text or "")
 
             # Format and append grounding sources if search was enabled and sources found
@@ -339,6 +390,7 @@ def gemini_service(
             logger.info(f"Generating content with Gemini model: {model}")
             llm = build_llm(model)
             llm_response = llm.invoke(prompt)
+            _set_request_tokens(fastapi_request, getattr(llm_response, "usage_metadata", None))
             if llm_response.response_metadata.get("finish_reason") == "SAFETY":
                 blocked_categories = llm_response.response_metadata.get("safety_ratings", []) or []
                 categories = [
@@ -355,7 +407,9 @@ def gemini_service(
         raise
 
 
-def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+def structured_service(
+    model: str, prompt: str, schema: dict[str, Any], fastapi_request: Request | None = None
+) -> dict[str, Any]:
     """
     Structured output service using raw genai.Client.
     Returns guaranteed-valid JSON matching the provided schema.
@@ -372,6 +426,7 @@ def structured_service(model: str, prompt: str, schema: dict[str, Any]) -> dict[
             ),
         )
         _check_safety_block(response, model)
+        _set_request_tokens(fastapi_request, response.usage_metadata)
 
         if not response.text:
             raise ValueError("Gemini returned an empty response")
@@ -440,6 +495,14 @@ async def gemini_stream_service(
             tools_config = build_native_tools(
                 grounding=grounding, code_exec=code_exec, url_context=url_context, location=location
             )
+
+        if cache_id and tools_config:
+            logger.warning(
+                "native_tools ignored: cannot be combined with cached_content "
+                "(%s). Tool declarations must be part of the cache.",
+                cache_id,
+            )
+            tools_config = None
 
         config = types.GenerateContentConfig(
             tools=tools_config,

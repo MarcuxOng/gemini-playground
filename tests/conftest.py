@@ -25,6 +25,8 @@ def setup_database():
 @pytest.fixture(scope="session", autouse=True)
 def mock_gemini_client_global():
     """Globally mock the Gemini client and LangChain LLM to prevent real API calls."""
+    from langchain_core.messages import AIMessage
+
     mock_client = MagicMock()
     mock_client.models.list_models.return_value = []
     mock_response = MagicMock()
@@ -34,9 +36,8 @@ def mock_gemini_client_global():
     mock_client.models.generate_content.return_value = mock_response
 
     mock_llm_instance = MagicMock()
-    mock_llm_response = MagicMock()
-    mock_llm_response.content = "mocked LLM response"
-    mock_llm_instance.invoke.return_value = mock_llm_response
+    mock_llm_instance.invoke.return_value = AIMessage(content="mocked LLM response")
+    mock_llm_instance.ainvoke.return_value = AIMessage(content="mocked LLM response")
 
     with (
         patch("app.services.gemini.client", mock_client),

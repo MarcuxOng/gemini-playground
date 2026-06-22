@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 import google.auth
 from google.auth.exceptions import DefaultCredentialsError
@@ -24,9 +25,21 @@ _SAFETY_SETTINGS: dict[HarmCategory, HarmBlockThreshold] = {
 _IS_PRODUCTION = os.getenv("ENV") == "production"
 
 
-def build_llm(model_name: str, temperature: float = 0.1) -> ChatGoogleGenerativeAI:
+def build_llm(
+    model_name: str,
+    temperature: float = 0.1,
+    cached_content: str | None = None,
+) -> ChatGoogleGenerativeAI:
     """Builds a Gemini LLM via ChatGoogleGenerativeAI (Vertex AI prod, AI Studio dev)."""
     logger.info(f"Building Gemini LLM: {model_name}")
+
+    common: dict[str, Any] = {
+        "model": model_name,
+        "temperature": temperature,
+        "safety_settings": _SAFETY_SETTINGS,
+    }
+    if cached_content:
+        common["cached_content"] = cached_content
 
     project_id: str | None = None
     if settings.gcp_project_id:
@@ -45,11 +58,7 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatGoogleGenerative
         try:
             google.auth.default()
             return ChatGoogleGenerativeAI(
-                model=model_name,
-                temperature=temperature,
-                project=project_id,
-                location=settings.gcp_region,
-                safety_settings=_SAFETY_SETTINGS,
+                project=project_id, location=settings.gcp_region, **common
             )
         except DefaultCredentialsError:
             if _IS_PRODUCTION:
@@ -69,9 +78,4 @@ def build_llm(model_name: str, temperature: float = 0.1) -> ChatGoogleGenerative
             "Set GCP_PROJECT_ID env var or ensure the Cloud Run service account has ADC set up."
         )
     logger.info("Using Google AI Studio path")
-    return ChatGoogleGenerativeAI(
-        model=model_name,
-        google_api_key=settings.gemini_api_key,
-        temperature=temperature,
-        safety_settings=_SAFETY_SETTINGS,
-    )
+    return ChatGoogleGenerativeAI(google_api_key=settings.gemini_api_key, **common)

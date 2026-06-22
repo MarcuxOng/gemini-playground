@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -13,6 +13,7 @@ from app.database.models import APIKey
 from app.services.rag import ingest_file_service, ingest_service, query_service
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
+from app.utils.models import BaseRequestModel
 from app.utils.response import APIResponse
 from app.utils.sanitizer import sanitize_prompt
 from app.utils.validators import ModelName
@@ -21,12 +22,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG"], dependencies=[Depends(verify_api_key)])
 
 
-class IngestRequest(BaseModel):
+class IngestRequest(BaseRequestModel):
     text: str = Field(None, max_length=100_000)  # type: ignore[assignment]
     file_ids: list[str] | None = None
 
 
-class QueryRequest(BaseModel):
+class QueryRequest(BaseRequestModel):
     model: ModelName = "gemini-2.5-flash"
     query: str = Field(..., max_length=4_000)
 

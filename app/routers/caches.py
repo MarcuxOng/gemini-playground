@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -13,6 +13,7 @@ from app.services import caches as caches_service
 from app.services.gemini import resolve_attachments
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
+from app.utils.models import BaseRequestModel
 from app.utils.response import APIResponse
 from app.utils.validators import ModelName
 
@@ -32,7 +33,7 @@ def _validate_attachment_ids(v: list[str]) -> list[str]:
     return v
 
 
-class CreateCacheInput(BaseModel):
+class CreateCacheInput(BaseRequestModel):
     model: ModelName = "gemini-2.5-flash"
     attachments: list[str] = []
     system_instruction: str | None = Field(default=None, max_length=32_000)
@@ -45,7 +46,7 @@ class CreateCacheInput(BaseModel):
         return _validate_attachment_ids(v)
 
 
-class UpdateCacheInput(BaseModel):
+class UpdateCacheInput(BaseRequestModel):
     ttl: str = Field(..., pattern=r"^\d+s$")
 
 

@@ -8,7 +8,7 @@ from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -22,6 +22,7 @@ from app.services.gemini import (
 )
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
+from app.utils.models import BaseRequestModel
 from app.utils.response import APIResponse
 from app.utils.sanitizer import sanitize_prompt
 from app.utils.validators import ModelName
@@ -40,7 +41,7 @@ def _validate_attachment_ids(v: list[str]) -> list[str]:
     return v
 
 
-class ProviderInput(BaseModel):
+class ProviderInput(BaseRequestModel):
     model: ModelName = "gemini-2.5-flash"
     prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
@@ -53,7 +54,7 @@ class ProviderInput(BaseModel):
         return _validate_attachment_ids(v)
 
 
-class StructuredInput(BaseModel):
+class StructuredInput(BaseRequestModel):
     model: ModelName = "gemini-2.5-flash"
     prompt: str = Field(..., max_length=32_000)
     response_schema: dict[str, Any]  # JSON Schema dict
@@ -90,6 +91,7 @@ async def gemini(
         owner_id=str(api_key.id),
         native_tools=cast(list[str], body.native_tools),
         cache_id=body.cache_id,
+        fastapi_request=request,
     )
 
     return APIResponse(data=response)
@@ -103,7 +105,11 @@ async def gemini_structured(request: Request, body: StructuredInput) -> APIRespo
         f"Calling Structured Gemini API with model: {body.model}, prompt_len: {len(prompt)}"
     )
     response = await run_in_threadpool(
-        structured_service, model=body.model, prompt=prompt, schema=body.response_schema
+        structured_service,
+        model=body.model,
+        prompt=prompt,
+        schema=body.response_schema,
+        fastapi_request=request,
     )
 
     return APIResponse(data=response)

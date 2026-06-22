@@ -8,7 +8,7 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
 from app.services.gemini import SafetyBlockError, generate_thread_title, resolve_attachments
 from app.services.rag import rag_owner_id
+from app.utils.models import BaseRequestModel
 from app.utils.validators import ModelName
 
 CompiledGraph = Any
@@ -27,7 +28,7 @@ CompiledGraph = Any
 logger = logging.getLogger(__name__)
 
 
-class AgentCreate(BaseModel):
+class AgentCreate(BaseRequestModel):
     name: str
     description: str | None = None
     system_prompt: str
@@ -49,7 +50,7 @@ class AgentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AgentRunRequest(BaseModel):
+class AgentRunRequest(BaseRequestModel):
     model: ModelName = "gemini-2.5-flash"
     preset: str | None = None  # hardcoded preset name
     agent_id: str | None = None  # DB-backed config id — takes priority
@@ -57,6 +58,7 @@ class AgentRunRequest(BaseModel):
     prompt: str = Field(..., max_length=32_000)
     thread_id: str | None = None
     attachments: list[str] = []
+    shared_cache_id: str | None = None
 
     @field_validator("attachments")
     @classmethod
@@ -85,7 +87,7 @@ class AgentRunResponse(BaseModel):
     thread_id: str
 
 
-class AgentUpdate(BaseModel):
+class AgentUpdate(BaseRequestModel):
     name: str | None = None
     description: str | None = None
     system_prompt: str | None = None
@@ -94,32 +96,44 @@ class AgentUpdate(BaseModel):
 
 
 @lru_cache(maxsize=32)
-def _get_cached_agent(preset: str, model: str, checkpointer_id: int) -> CompiledGraph:
+def _get_cached_agent(
+    preset: str, model: str, checkpointer_id: int, shared_cache_id: str | None = None
+) -> CompiledGraph:
     """
     Cached agent factory to avoid rebuilding the agent on every request.
-    Includes checkpointer_id in the cache key to ensure the checkpointer is correctly handled.
+    Includes checkpointer_id and shared_cache_id in the cache key to distinguish
+    agents with different cached context.
     """
     checkpointer: Any = get_checkpointer()
     agent_factory = PRESETS[preset]
-    return agent_factory(model=model, checkpointer=checkpointer)
+    return agent_factory(model=model, checkpointer=checkpointer, cached_content=shared_cache_id)
 
 
 async def _get_agent(
-    preset: str, model: str, checkpointer: Any, extra_tools: list[BaseTool] | None = None
+    preset: str,
+    model: str,
+    checkpointer: Any,
+    extra_tools: list[BaseTool] | None = None,
+    shared_cache_id: str | None = None,
 ) -> CompiledGraph:
-    """Helper to get cached or new agent with optional extra tools."""
+    """Helper to get cached or new agent with optional extra tools and shared cache."""
     if extra_tools:
-        # Bypass cache if extra tools are present as they are not hashable
         agent_factory = PRESETS[preset]
         return await run_in_threadpool(
-            agent_factory, model=model, checkpointer=checkpointer, extra_tools=extra_tools
+            agent_factory,
+            model=model,
+            checkpointer=checkpointer,
+            extra_tools=extra_tools,
+            cached_content=shared_cache_id,
         )
 
-    return await run_in_threadpool(_get_cached_agent, preset, model, id(checkpointer))
+    return await run_in_threadpool(
+        _get_cached_agent, preset, model, id(checkpointer), shared_cache_id
+    )
 
 
 async def run_agent_service(
-    request: AgentRunRequest, db: Session, api_key: APIKey
+    request: AgentRunRequest, db: Session, api_key: APIKey, fastapi_request: Request | None = None
 ) -> AgentRunResponse:
     """
     Unified service for running agents.
@@ -226,9 +240,16 @@ async def run_agent_service(
                 system_prompt=system_prompt,
                 model=model,
                 checkpointer=checkpointer,
+                cached_content=request.shared_cache_id,
             )
         else:
-            agent = await _get_agent(preset_name, model, checkpointer, extra_tools=mcp_tools)
+            agent = await _get_agent(
+                preset_name,
+                model,
+                checkpointer,
+                extra_tools=mcp_tools,
+                shared_cache_id=request.shared_cache_id,
+            )
 
         # Run the agent
         config = AgentConfig(
@@ -241,6 +262,12 @@ async def run_agent_service(
         prompt_input: Any = request.prompt
         if request.attachments:
             resolved = resolve_attachments(request.attachments, db, str(api_key.id))
+            if not resolved:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"None of the requested attachment(s) could be found. "
+                    f"Requested: {request.attachments}",
+                )
             prompt_input = [{"type": "text", "text": request.prompt}]
             for att in resolved:
                 prompt_input.append(
@@ -249,11 +276,15 @@ async def run_agent_service(
 
         rag_token = rag_owner_id.set(str(api_key.id))
         try:
-            answer = await run_in_threadpool(
+            answer, token_usage = await run_in_threadpool(
                 run_once, agent, prompt_input, config=config, lg_config=lg_config
             )
         finally:
             rag_owner_id.reset(rag_token)
+
+        if fastapi_request is not None:
+            fastapi_request.state.input_tokens = int(token_usage.get("input_tokens", 0))
+            fastapi_request.state.output_tokens = int(token_usage.get("output_tokens", 0))
 
         # Save messages
         human_msg = ThreadMessage(
@@ -305,7 +336,7 @@ async def run_agent_stream_service(
         tools = list(agent_config_model.tools) if agent_config_model.tools else []
         model = str(agent_config_model.model)
         preset_name = f"custom:{agent_config_model.name}"
-    else:
+    elif request.preset:
         preset = str(request.preset)
         if preset not in PRESETS:
             raise HTTPException(
@@ -391,14 +422,27 @@ async def run_agent_stream_service(
                 system_prompt=system_prompt,
                 model=model,
                 checkpointer=checkpointer,
+                cached_content=request.shared_cache_id,
             )
         else:
-            agent = await _get_agent(preset_name, model, checkpointer, extra_tools=mcp_tools)
+            agent = await _get_agent(
+                preset_name,
+                model,
+                checkpointer,
+                extra_tools=mcp_tools,
+                shared_cache_id=request.shared_cache_id,
+            )
 
         lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}
         prompt_input: Any = request.prompt
         if request.attachments:
             resolved = resolve_attachments(request.attachments, db, str(api_key.id))
+            if not resolved:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"None of the requested attachment(s) could be found. "
+                    f"Requested: {request.attachments}",
+                )
             prompt_input = [{"type": "text", "text": request.prompt}]
             for att in resolved:
                 prompt_input.append(

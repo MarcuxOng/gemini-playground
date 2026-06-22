@@ -39,6 +39,7 @@ def build_knowledge_agent(
     model: str,
     checkpointer: Any = None,
     extra_tools: list[BaseTool] | None = None,
+    cached_content: str | None = None,
 ) -> CompiledGraph:
     """
     Build and return a Knowledge/RAG ReAct agent.
@@ -47,6 +48,7 @@ def build_knowledge_agent(
         model: Model name.
         checkpointer: Optional LangGraph checkpointer.
         extra_tools: Optional additional LangChain tools.
+        cached_content: Optional Gemini context cache ID.
 
     Returns:
         A compiled LangGraph agent.
@@ -58,6 +60,7 @@ def build_knowledge_agent(
             system_prompt=SYSTEM_PROMPT,
             model=model,
             checkpointer=checkpointer,
+            cached_content=cached_content,
         )
         return res
     except Exception:
