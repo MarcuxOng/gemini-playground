@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
@@ -25,20 +24,10 @@ from app.utils.limiter import limiter
 from app.utils.models import BaseRequestModel
 from app.utils.response import APIResponse
 from app.utils.sanitizer import sanitize_prompt
-from app.utils.validators import ModelName
+from app.utils.validators import ModelName, validate_attachment_ids
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/gemini", tags=["Gemini"], dependencies=[Depends(verify_api_key)])
-
-
-def _validate_attachment_ids(v: list[str]) -> list[str]:
-    """Only DB-owned UUIDs are accepted as attachment references."""
-    for att in v:
-        try:
-            uuid.UUID(att)
-        except ValueError:
-            raise ValueError(f"Attachment must be a DB file UUID, got: {att!r}") from None
-    return v
 
 
 class ProviderInput(BaseRequestModel):
@@ -52,7 +41,7 @@ class ProviderInput(BaseRequestModel):
     @field_validator("attachments")
     @classmethod
     def validate_attachments(cls, v: list[str]) -> list[str]:
-        return _validate_attachment_ids(v)
+        return validate_attachment_ids(v)
 
 
 class StructuredInput(BaseRequestModel):

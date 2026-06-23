@@ -22,7 +22,7 @@ from app.memory.checkpointer import get_checkpointer
 from app.services.gemini import SafetyBlockError, generate_thread_title, resolve_attachments
 from app.services.rag import rag_owner_id
 from app.utils.models import BaseRequestModel
-from app.utils.validators import ModelName
+from app.utils.validators import ModelName, validate_attachment_ids
 
 CompiledGraph = Any
 
@@ -65,13 +65,7 @@ class AgentRunRequest(BaseRequestModel):
     @field_validator("attachments")
     @classmethod
     def validate_attachments(cls, v: list[str]) -> list[str]:
-        """Only DB-owned UUIDs are accepted as attachment references."""
-        for att in v:
-            try:
-                uuid.UUID(att)
-            except ValueError:
-                raise ValueError(f"Attachment must be a DB file UUID, got: {att!r}") from None
-        return v
+        return validate_attachment_ids(v)
 
     @model_validator(mode="after")
     def check_source(self) -> AgentRunRequest:

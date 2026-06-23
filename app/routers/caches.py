@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field, field_validator
 from sqlalchemy.orm import Session
@@ -15,22 +13,13 @@ from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.models import BaseRequestModel
 from app.utils.response import APIResponse
-from app.utils.validators import ModelName
+from app.utils.validators import ModelName, validate_attachment_ids
 
 router = APIRouter(
     prefix="/api/v1/caches",
     tags=["Context Caches"],
     dependencies=[Depends(verify_api_key)],
 )
-
-
-def _validate_attachment_ids(v: list[str]) -> list[str]:
-    for att in v:
-        try:
-            uuid.UUID(att)
-        except ValueError:
-            raise ValueError(f"Attachment must be a DB file UUID, got: {att!r}") from None
-    return v
 
 
 class CreateCacheInput(BaseRequestModel):
@@ -43,7 +32,7 @@ class CreateCacheInput(BaseRequestModel):
     @field_validator("attachments")
     @classmethod
     def validate_attachments(cls, v: list[str]) -> list[str]:
-        return _validate_attachment_ids(v)
+        return validate_attachment_ids(v)
 
 
 class UpdateCacheInput(BaseRequestModel):

@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated
 
 from pydantic import AfterValidator
@@ -26,3 +27,13 @@ def _validate_model_name(v: str) -> str:
 
 # Drop-in replacement for `str` on any Pydantic model field that accepts a model name.
 ModelName = Annotated[str, AfterValidator(_validate_model_name)]
+
+
+def validate_attachment_ids(v: list[str]) -> list[str]:
+    """Validator: only DB-owned UUIDs are accepted as attachment references."""
+    for att in v:
+        try:
+            uuid.UUID(att)
+        except ValueError:
+            raise ValueError(f"Attachment must be a DB file UUID, got: {att!r}") from None
+    return v
