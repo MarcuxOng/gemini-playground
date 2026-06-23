@@ -8,7 +8,7 @@ cached_content + tools rejection when an empty cache_id string is passed).
 
 from __future__ import annotations
 
-import types as py_types
+import types
 from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, model_validator
@@ -17,7 +17,7 @@ from pydantic import BaseModel, model_validator
 def _accepts_none(annotation: Any) -> bool:
     """Return True if the annotation allows None (Optional / T | None)."""
     origin = get_origin(annotation)
-    if origin in {py_types.UnionType, Union}:
+    if origin in {types.UnionType, Union}:
         return type(None) in get_args(annotation)
     return False
 
