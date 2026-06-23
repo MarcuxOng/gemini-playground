@@ -54,17 +54,9 @@ async def edit_image(
 ) -> APIResponse[ImageResponse]:
     """Edit an image based on a text prompt."""
     try:
-        if file.size is not None and file.size > 20 * 1024 * 1024:
+        content = await file.read()
+        if len(content) > 20 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
-        max_size = 20 * 1024 * 1024
-        content = b""
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            content += chunk
-            if len(content) > max_size:
-                raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
         mime_type = file.content_type or "application/octet-stream"
         try:
             validate_upload(content, mime_type)
