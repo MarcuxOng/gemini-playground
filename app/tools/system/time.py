@@ -6,15 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-else:
-    try:
-        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-    except ImportError:
-        from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.tools import register
 
