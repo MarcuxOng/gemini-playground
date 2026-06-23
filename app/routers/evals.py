@@ -40,7 +40,6 @@ async def create_dataset(
     request: Request,
     body: DatasetCreate,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_master_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     existing = db.query(EvalDataset).filter(EvalDataset.name == body.name).first()
     if existing:
@@ -67,7 +66,6 @@ async def start_eval(
     body: EvalRunRequest,
     db: Session = Depends(get_db),
     api_key: APIKey = Depends(verify_api_key),
-    _: None = Depends(verify_master_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     logger.info(
         f"Starting eval run for dataset {body.dataset_id} with agent {body.agent_id_or_preset}"
