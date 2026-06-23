@@ -61,13 +61,15 @@ def extract_pdf_text(
             return f"Error: end_page must be between {start_page} and {total_pages}."
 
         if max_chars <= 0:
-            raise ValueError("max_chars must be positive.")
+            return "Error: max_chars must be positive."
 
         pages_text: list[str] = []
         char_count = 0
         truncated = False
+        last_page_index = start_page - 1
 
         for i in range(start_page - 1, end_page):
+            last_page_index = i
             page_text = reader.pages[i].extract_text() or ""
             remaining = max_chars - char_count
             if len(page_text) > remaining:
@@ -82,7 +84,7 @@ def extract_pdf_text(
         if not extracted.strip():
             return f"Warning: No extractable text found in pages {start_page}–{end_page} of '{path}'. The PDF may be image-based."
 
-        result = f"[PDF: {path} | Pages {start_page}–{i + 1} of {total_pages}]\n\n{extracted}"
+        result = f"[PDF: {path} | Pages {start_page}–{last_page_index + 1} of {total_pages}]\n\n{extracted}"
 
         if truncated:
             result += f"\n\n[...Truncated to {max_chars} chars...]"
@@ -90,7 +92,7 @@ def extract_pdf_text(
         return result
 
     except ValueError:
-        raise
+        return "Error: max_chars must be positive."
     except PermissionError:
         return f"Error: Path '{path}' is outside workspace root."
     except Exception as e:

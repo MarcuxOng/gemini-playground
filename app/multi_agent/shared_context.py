@@ -49,10 +49,10 @@ class SharedContext:
         The loop fires at 80 % of *ttl_seconds*.  Call :meth:`stop_refresh`
         when the swarm session ends.
         """
-        if self._refresh_task is not None:
+        if self._refresh_task is not None and not self._refresh_task.done():
             return
 
-        interval = max(int(self.ttl_seconds * 0.8), 60)
+        interval = min(max(int(self.ttl_seconds * 0.8), 60), self.ttl_seconds)
 
         async def _refresh_loop() -> None:
             while True:
@@ -70,6 +70,7 @@ class SharedContext:
         if self._refresh_task and not self._refresh_task.done():
             self._refresh_task.cancel()
             logger.info("Stopped refresh loop for cache %s", self.cache_id)
+        self._refresh_task = None
 
     def invalidate(self) -> None:
         """Delete the underlying Gemini context cache and stop refreshing."""

@@ -97,6 +97,14 @@ def build_agent(
     """
     try:
         if cached_content:
+            if tools and any(tools):
+                raise ValueError(
+                    "cached_content cannot be combined with tools — tool declarations must be part of the cache."
+                )
+            if native_tools:
+                raise ValueError(
+                    "cached_content cannot be combined with native_tools — tool declarations must be part of the cache."
+                )
             llm = build_llm(
                 model, cached_content=cached_content, max_output_tokens=max_output_tokens
             )
@@ -105,8 +113,6 @@ def build_agent(
                 "must be part of the cache; skipping them in the request.",
                 cached_content,
             )
-            if native_tools:
-                logger.warning("native_tools ignored: cannot be combined with cached_content")
             agent = create_agent(
                 model=llm,
                 tools=[],
