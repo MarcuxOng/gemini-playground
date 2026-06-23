@@ -47,6 +47,7 @@ class ProviderInput(BaseRequestModel):
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url", "location"]] = []
     cache_id: str | None = None
+    max_output_tokens: int | None = None
 
     @field_validator("attachments")
     @classmethod
@@ -58,6 +59,7 @@ class StructuredInput(BaseRequestModel):
     model: ModelName = "gemini-2.5-flash"
     prompt: str = Field(..., max_length=32_000)
     response_schema: dict[str, Any]  # JSON Schema dict
+    max_output_tokens: int | None = None
 
 
 @router.get("/models", response_model=APIResponse)
@@ -92,6 +94,7 @@ async def gemini(
         native_tools=cast(list[str], body.native_tools),
         cache_id=body.cache_id,
         fastapi_request=request,
+        max_output_tokens=body.max_output_tokens,
     )
 
     return APIResponse(data=response)
@@ -110,6 +113,7 @@ async def gemini_structured(request: Request, body: StructuredInput) -> APIRespo
         prompt=prompt,
         schema=body.response_schema,
         fastapi_request=request,
+        max_output_tokens=body.max_output_tokens,
     )
 
     return APIResponse(data=response)
@@ -143,6 +147,7 @@ async def gemini_stream(
                 owner_id=str(api_key.id),
                 native_tools=cast(list[str], body.native_tools),
                 cache_id=body.cache_id,
+                max_output_tokens=body.max_output_tokens,
             ):
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'thread_id': None})}\n\n"

@@ -39,7 +39,12 @@ GRADER_SCHEMA = {
 
 
 async def run_eval(
-    db: Session, dataset_id: str, agent_id_or_preset: str, model: str, api_key_id: str
+    db: Session,
+    dataset_id: str,
+    agent_id_or_preset: str,
+    model: str,
+    api_key_id: str,
+    max_output_tokens: int | None = None,
 ) -> dict[str, Any]:
     """
     Runs an evaluation of an agent against a dataset.
@@ -80,6 +85,7 @@ async def run_eval(
             preset=agent_id_or_preset if agent_id_or_preset in KNOWN_PRESETS else None,
             agent_id=agent_id_or_preset if agent_id_or_preset not in KNOWN_PRESETS else None,
             attachments=attachments,
+            max_output_tokens=max_output_tokens,
         )
 
         try:
@@ -91,12 +97,13 @@ async def run_eval(
                 input=user_input, expected=expected_output, actual=actual_output
             )
 
-            # Use structured_service as the grader
+            # Use structured_service as the grader — cap at 1024 tokens (grades are small JSON)
             grade = await run_in_threadpool(
                 structured_service,
                 model="gemini-2.5-flash",
                 prompt=grader_prompt,
                 schema=GRADER_SCHEMA,
+                max_output_tokens=1024,
             )
 
             is_passed = grade.get("passed", False)

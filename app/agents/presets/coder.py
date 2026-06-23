@@ -44,6 +44,7 @@ def build_coder_agent(
     checkpointer: Any = None,
     extra_tools: list[BaseTool] | None = None,
     cached_content: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> CompiledGraph:
     """
     Build and return a coding ReAct agent.
@@ -53,6 +54,7 @@ def build_coder_agent(
         checkpointer: Optional LangGraph checkpointer.
         extra_tools: Optional additional LangChain tools.
         cached_content: Optional Gemini context cache ID.
+        max_output_tokens: Optional max output tokens for generation.
 
     Returns:
         A compiled LangGraph agent.
@@ -65,6 +67,7 @@ def build_coder_agent(
             model=model,
             checkpointer=checkpointer,
             cached_content=cached_content,
+            max_output_tokens=max_output_tokens,
         )
         return res
     except Exception:

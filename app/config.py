@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     gcs_bucket: str | None = None
     gcp_service_account_email: str | None = None
 
+    # Generation defaults
+    default_max_output_tokens: int = 1024
+
     # Tools API keys
     alpha_vantage_api_key: str
     openweathermap_api_key: str

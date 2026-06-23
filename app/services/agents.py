@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.agents import PRESETS, AgentConfig, build_agent, run_once
+from app.config import settings
 from app.database.models import Agents, APIKey, MCPServerConfig, Thread, ThreadMessage
 from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
@@ -59,6 +60,7 @@ class AgentRunRequest(BaseRequestModel):
     thread_id: str | None = None
     attachments: list[str] = []
     shared_cache_id: str | None = None
+    max_output_tokens: int | None = None
 
     @field_validator("attachments")
     @classmethod
@@ -97,16 +99,25 @@ class AgentUpdate(BaseRequestModel):
 
 @lru_cache(maxsize=32)
 def _get_cached_agent(
-    preset: str, model: str, checkpointer_id: int, shared_cache_id: str | None = None
+    preset: str,
+    model: str,
+    checkpointer_id: int,
+    shared_cache_id: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> CompiledGraph:
     """
     Cached agent factory to avoid rebuilding the agent on every request.
-    Includes checkpointer_id and shared_cache_id in the cache key to distinguish
-    agents with different cached context.
+    Includes checkpointer_id, shared_cache_id, and max_output_tokens in
+    the cache key to distinguish agents with different configurations.
     """
     checkpointer: Any = get_checkpointer()
     agent_factory = PRESETS[preset]
-    return agent_factory(model=model, checkpointer=checkpointer, cached_content=shared_cache_id)
+    return agent_factory(
+        model=model,
+        checkpointer=checkpointer,
+        cached_content=shared_cache_id,
+        max_output_tokens=max_output_tokens,
+    )
 
 
 async def _get_agent(
@@ -115,6 +126,7 @@ async def _get_agent(
     checkpointer: Any,
     extra_tools: list[BaseTool] | None = None,
     shared_cache_id: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> CompiledGraph:
     """Helper to get cached or new agent with optional extra tools and shared cache."""
     if extra_tools:
@@ -125,10 +137,11 @@ async def _get_agent(
             checkpointer=checkpointer,
             extra_tools=extra_tools,
             cached_content=shared_cache_id,
+            max_output_tokens=max_output_tokens,
         )
 
     return await run_in_threadpool(
-        _get_cached_agent, preset, model, id(checkpointer), shared_cache_id
+        _get_cached_agent, preset, model, id(checkpointer), shared_cache_id, max_output_tokens
     )
 
 
@@ -229,6 +242,13 @@ async def run_agent_service(
                     tools_from_server = await load_mcp_tools(config_dict)
                     mcp_tools.extend(tools_from_server)
 
+        # Resolve max_output_tokens: use request value if provided, else config default
+        max_tokens = (
+            request.max_output_tokens
+            if request.max_output_tokens is not None
+            else settings.default_max_output_tokens
+        )
+
         # Build or get cached agent
         agent: CompiledGraph
         if request.agent_id:
@@ -241,6 +261,7 @@ async def run_agent_service(
                 model=model,
                 checkpointer=checkpointer,
                 cached_content=request.shared_cache_id,
+                max_output_tokens=max_tokens,
             )
         else:
             agent = await _get_agent(
@@ -249,6 +270,7 @@ async def run_agent_service(
                 checkpointer,
                 extra_tools=mcp_tools,
                 shared_cache_id=request.shared_cache_id,
+                max_output_tokens=max_tokens,
             )
 
         # Run the agent
@@ -412,6 +434,13 @@ async def run_agent_stream_service(
                     tools_from_server = await load_mcp_tools(config_dict)
                     mcp_tools.extend(tools_from_server)
 
+        # Resolve max_output_tokens: use request value if provided, else config default
+        max_tokens = (
+            request.max_output_tokens
+            if request.max_output_tokens is not None
+            else settings.default_max_output_tokens
+        )
+
         # Build or get cached agent
         agent: CompiledGraph
         if request.agent_id:
@@ -423,6 +452,7 @@ async def run_agent_stream_service(
                 model=model,
                 checkpointer=checkpointer,
                 cached_content=request.shared_cache_id,
+                max_output_tokens=max_tokens,
             )
         else:
             agent = await _get_agent(
@@ -431,6 +461,7 @@ async def run_agent_stream_service(
                 checkpointer,
                 extra_tools=mcp_tools,
                 shared_cache_id=request.shared_cache_id,
+                max_output_tokens=max_tokens,
             )
 
         lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}

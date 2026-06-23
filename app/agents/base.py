@@ -78,6 +78,7 @@ def build_agent(
     checkpointer: Any = None,
     native_tools: list[str] | None = None,
     cached_content: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> CompiledGraph:
     """
     Build and return a compiled LangGraph ReAct agent.
@@ -89,13 +90,16 @@ def build_agent(
         checkpointer:  Optional checkpointer for persistent state.
         native_tools:  Optional list of Gemini native tools ('search', 'code', 'url').
         cached_content: Optional Gemini context cache ID for shared context.
+        max_output_tokens: Optional max output tokens for generation.
 
     Returns:
         A compiled LangGraph CompiledGraph ready to invoke.
     """
     try:
         if cached_content:
-            llm = build_llm(model, cached_content=cached_content)
+            llm = build_llm(
+                model, cached_content=cached_content, max_output_tokens=max_output_tokens
+            )
             logger.info(
                 "Using cached_content %s — system_instruction, tools, and tool_config "
                 "must be part of the cache; skipping them in the request.",
@@ -115,7 +119,7 @@ def build_agent(
         processed_tools = project_tools_to_langchain(tools)
 
         # Build LLM and bind native tools if requested
-        llm = build_llm(model, cached_content=cached_content)
+        llm = build_llm(model, cached_content=cached_content, max_output_tokens=max_output_tokens)
         llm_with_tools: Any = llm
 
         # Bind native tools if requested
