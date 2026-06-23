@@ -61,8 +61,14 @@ def project_tools_to_langchain(tools: Sequence[str | BaseTool]) -> list[BaseTool
 def merge_tools(
     base_tools: Sequence[str | BaseTool], extra_tools: list[BaseTool] | None = None
 ) -> list[str | BaseTool]:
-    """Combine base tools with optional extra tools into a single list."""
-    return list(base_tools) + (extra_tools or [])
+    """
+    Consolidates base tools and optional extra tools into a single list.
+    This is the central place to handle collision resolution or validation.
+    """
+    combined: list[str | BaseTool] = list(base_tools)
+    if extra_tools:
+        combined.extend(extra_tools)
+    return combined
 
 
 def build_agent(
@@ -91,7 +97,7 @@ def build_agent(
     """
     try:
         if cached_content:
-            if tools:
+            if tools and any(tools):
                 raise ValueError(
                     "cached_content cannot be combined with tools — tool declarations must be part of the cache."
                 )
