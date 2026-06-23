@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.agents import PRESETS, AgentConfig, build_agent, run_once
+from app.agents import PRESETS, build_agent, run_once
 from app.config import settings
 from app.database.models import Agents, APIKey, MCPServerConfig, Thread, ThreadMessage
 from app.mcp.client import load_mcp_tools
@@ -268,12 +268,6 @@ async def run_agent_service(
             )
 
         # Run the agent
-        config = AgentConfig(
-            name=f"{preset_name.capitalize()} Agent",
-            model=model,
-            verbose=False,
-        )
-
         lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}
         prompt_input: Any = request.prompt
         if request.attachments:
@@ -293,7 +287,7 @@ async def run_agent_service(
         rag_token = rag_owner_id.set(str(api_key.id))
         try:
             answer, token_usage = await run_in_threadpool(
-                run_once, agent, prompt_input, config=config, lg_config=lg_config
+                run_once, agent, prompt_input, lg_config=lg_config
             )
         finally:
             rag_owner_id.reset(rag_token)
