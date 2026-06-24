@@ -145,35 +145,50 @@ class TestBuildAgentWithCachedContent:
 
 
 class TestPresetFactoriesWithCachedContent:
-    def test_coder_preset_rejects_cached_content_with_tools(self):
+    def test_coder_preset_accepts_cached_content_with_tools(self):
         from app.agents.presets.coder import build_coder_agent
-        import pytest
 
-        with pytest.raises(ValueError, match="cached_content cannot be combined with tools"):
-            build_coder_agent(
-                model="gemini-2.5-flash",
-                cached_content="cachedContents/test-xyz",
-            )
+        mock_llm = MagicMock()
+        with patch("app.agents.base.build_llm", return_value=mock_llm):
+            with patch("app.agents.base.create_agent") as mock_create:
+                agent = build_coder_agent(
+                    model="gemini-2.5-flash",
+                    cached_content="cachedContents/test-xyz",
+                )
+                assert agent is not None
+                _, kwargs = mock_create.call_args
+                assert kwargs["tools"]  # tools should be passed through
+                assert kwargs["system_prompt"] is None
 
-    def test_research_preset_rejects_cached_content_with_tools(self):
+    def test_research_preset_accepts_cached_content_with_tools(self):
         from app.agents.presets.research import build_research_agent
-        import pytest
 
-        with pytest.raises(ValueError, match="cached_content cannot be combined with tools"):
-            build_research_agent(
-                model="gemini-2.5-flash",
-                cached_content="cachedContents/test-xyz",
-            )
+        mock_llm = MagicMock()
+        with patch("app.agents.base.build_llm", return_value=mock_llm):
+            with patch("app.agents.base.create_agent") as mock_create:
+                agent = build_research_agent(
+                    model="gemini-2.5-flash",
+                    cached_content="cachedContents/test-xyz",
+                )
+                assert agent is not None
+                _, kwargs = mock_create.call_args
+                assert kwargs["tools"]  # tools should be passed through
+                assert kwargs["system_prompt"] is None
 
-    def test_analyst_preset_rejects_cached_content_with_tools(self):
+    def test_analyst_preset_accepts_cached_content_with_tools(self):
         from app.agents.presets.analyst import build_analyst_agent
-        import pytest
 
-        with pytest.raises(ValueError, match="cached_content cannot be combined with tools"):
-            build_analyst_agent(
-                model="gemini-2.5-flash",
-                cached_content="cachedContents/test-xyz",
-            )
+        mock_llm = MagicMock()
+        with patch("app.agents.base.build_llm", return_value=mock_llm):
+            with patch("app.agents.base.create_agent") as mock_create:
+                agent = build_analyst_agent(
+                    model="gemini-2.5-flash",
+                    cached_content="cachedContents/test-xyz",
+                )
+                assert agent is not None
+                _, kwargs = mock_create.call_args
+                assert kwargs["tools"]  # tools should be passed through
+                assert kwargs["system_prompt"] is None
 
     def test_preset_without_cached_content_defaults_to_none(self):
         from app.agents.presets.coder import build_coder_agent
