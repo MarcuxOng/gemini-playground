@@ -91,8 +91,6 @@ def extract_pdf_text(
 
         return result
 
-    except ValueError:
-        return "Error: max_chars must be positive."
     except PermissionError:
         return f"Error: Path '{path}' is outside workspace root."
     except Exception as e:
