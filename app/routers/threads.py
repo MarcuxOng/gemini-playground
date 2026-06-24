@@ -19,7 +19,6 @@ router = APIRouter(
 async def list_threads(
     request: Request,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_master_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     threads = db.query(Thread).order_by(Thread.updated_at.desc()).all()
     return APIResponse(
@@ -42,7 +41,6 @@ async def get_thread_messages(
     request: Request,
     thread_id: str,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_master_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     thread = db.query(Thread).filter(Thread.id == thread_id).first()
     if not thread:
@@ -61,7 +59,6 @@ async def delete_thread(
     request: Request,
     thread_id: str,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_master_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     thread = db.query(Thread).filter(Thread.id == thread_id).first()
     if not thread:

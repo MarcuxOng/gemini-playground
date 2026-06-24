@@ -5,12 +5,11 @@ from app.agents.presets.analyst import build_analyst_agent
 from app.agents.presets.coder import build_coder_agent
 from app.agents.presets.knowledge import build_knowledge_agent
 from app.agents.presets.research import build_research_agent
-from app.agents.runner import AgentConfig, run_once
+from app.agents.runner import run_once
 
 __all__ = [
     "build_agent",
     "run_once",
-    "AgentConfig",
     "build_coder_agent",
     "build_research_agent",
     "build_analyst_agent",

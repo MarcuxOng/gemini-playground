@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client
+from app.config import build_genai_client, settings
 
 if TYPE_CHECKING:
     from fastapi import Request
@@ -314,11 +314,16 @@ def gemini_service(
     native_tools: list[str] | None = None,
     cache_id: str | None = None,
     fastapi_request: Request | None = None,
+    max_output_tokens: int | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
     Reaches for raw genai.Client only when attachments or native_tools are present since LangChain's Files API integration or native tools is less direct.
     """
+    max_tokens = (
+        max_output_tokens if max_output_tokens is not None else settings.default_max_output_tokens
+    )
+
     try:
         if attachments and (not db or not owner_id):
             raise ValueError("attachments require both db and owner_id to be provided")
@@ -360,6 +365,7 @@ def gemini_service(
                 tools=tools_config,
                 safety_settings=SAFETY_SETTINGS,
                 cached_content=cache_id,
+                max_output_tokens=max_tokens,
             )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
@@ -388,7 +394,7 @@ def gemini_service(
             return text
         else:
             logger.info(f"Generating content with Gemini model: {model}")
-            llm = build_llm(model)
+            llm = build_llm(model, max_output_tokens=max_tokens)
             llm_response = llm.invoke(prompt)
             _set_request_tokens(fastapi_request, getattr(llm_response, "usage_metadata", None))
             if llm_response.response_metadata.get("finish_reason") == "SAFETY":
@@ -408,12 +414,20 @@ def gemini_service(
 
 
 def structured_service(
-    model: str, prompt: str, schema: dict[str, Any], fastapi_request: Request | None = None
+    model: str,
+    prompt: str,
+    schema: dict[str, Any],
+    fastapi_request: Request | None = None,
+    max_output_tokens: int | None = None,
 ) -> dict[str, Any]:
     """
     Structured output service using raw genai.Client.
     Returns guaranteed-valid JSON matching the provided schema.
     """
+    max_tokens = (
+        max_output_tokens if max_output_tokens is not None else settings.default_max_output_tokens
+    )
+
     try:
         logger.info(f"Generating structured content with Gemini model: {model}")
         response = client.models.generate_content(
@@ -423,6 +437,7 @@ def structured_service(
                 response_mime_type="application/json",
                 response_schema=schema,
                 safety_settings=SAFETY_SETTINGS,
+                max_output_tokens=max_tokens,
             ),
         )
         _check_safety_block(response, model)
@@ -469,8 +484,13 @@ async def gemini_stream_service(
     owner_id: str | None = None,
     native_tools: list[str] | None = None,
     cache_id: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
+    max_tokens = (
+        max_output_tokens if max_output_tokens is not None else settings.default_max_output_tokens
+    )
+
     try:
         if attachments and (not db or not owner_id):
             raise ValueError("attachments require both db and owner_id to be provided")
@@ -508,6 +528,7 @@ async def gemini_stream_service(
             tools=tools_config,
             safety_settings=SAFETY_SETTINGS,
             cached_content=cache_id,
+            max_output_tokens=max_tokens,
         )
 
         async_client = client.aio

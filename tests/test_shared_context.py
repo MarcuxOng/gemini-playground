@@ -145,50 +145,35 @@ class TestBuildAgentWithCachedContent:
 
 
 class TestPresetFactoriesWithCachedContent:
-    def test_coder_preset_passes_cached_content(self):
+    def test_coder_preset_rejects_cached_content_with_tools(self):
         from app.agents.presets.coder import build_coder_agent
+        import pytest
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = AIMessage(content="ok")
-
-        with patch("app.agents.base.build_llm", return_value=mock_llm) as mock_build:
+        with pytest.raises(ValueError, match="cached_content cannot be combined with tools"):
             build_coder_agent(
                 model="gemini-2.5-flash",
                 cached_content="cachedContents/test-xyz",
             )
 
-        mock_build.assert_called_once()
-        assert mock_build.call_args.kwargs.get("cached_content") == "cachedContents/test-xyz"
-
-    def test_research_preset_passes_cached_content(self):
+    def test_research_preset_rejects_cached_content_with_tools(self):
         from app.agents.presets.research import build_research_agent
+        import pytest
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = AIMessage(content="ok")
-
-        with patch("app.agents.base.build_llm", return_value=mock_llm) as mock_build:
+        with pytest.raises(ValueError, match="cached_content cannot be combined with tools"):
             build_research_agent(
                 model="gemini-2.5-flash",
                 cached_content="cachedContents/test-xyz",
             )
 
-        mock_build.assert_called_once()
-        assert mock_build.call_args.kwargs.get("cached_content") == "cachedContents/test-xyz"
-
-    def test_analyst_preset_passes_cached_content(self):
+    def test_analyst_preset_rejects_cached_content_with_tools(self):
         from app.agents.presets.analyst import build_analyst_agent
+        import pytest
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = AIMessage(content="ok")
-
-        with patch("app.agents.base.build_llm", return_value=mock_llm) as mock_build:
+        with pytest.raises(ValueError, match="cached_content cannot be combined with tools"):
             build_analyst_agent(
                 model="gemini-2.5-flash",
                 cached_content="cachedContents/test-xyz",
             )
-
-        mock_build.assert_called_once()
-        assert mock_build.call_args.kwargs.get("cached_content") == "cachedContents/test-xyz"
 
     def test_preset_without_cached_content_defaults_to_none(self):
         from app.agents.presets.coder import build_coder_agent

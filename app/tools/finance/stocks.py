@@ -52,9 +52,6 @@ def get_stock_price(symbol: str) -> str:
             )
             return f"Could not retrieve a valid price for {symbol}. The symbol might be incorrect or the API limit reached."
 
-    except requests.RequestException as e:
-        logger.error(f"Error fetching stock price: {e}")
-        return f"Error fetching stock price: {e}"
     except Exception as e:
-        logger.error(f"Unknown error fetching stock price: {e}")
+        logger.error(f"Error fetching stock price: {e}")
         return f"Error fetching stock price: {e}"

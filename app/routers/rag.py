@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/v1/rag", tags=["RAG"], dependencies=[Depends(ver
 
 
 class IngestRequest(BaseRequestModel):
-    text: str = Field(None, max_length=100_000)  # type: ignore[assignment]
+    text: str | None = Field(default=None, max_length=100_000)
     file_ids: list[str] | None = None
 
 

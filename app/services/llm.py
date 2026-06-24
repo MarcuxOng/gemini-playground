@@ -29,6 +29,7 @@ def build_llm(
     model_name: str,
     temperature: float = 0.1,
     cached_content: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> ChatGoogleGenerativeAI:
     """Builds a Gemini LLM via ChatGoogleGenerativeAI (Vertex AI prod, AI Studio dev)."""
     logger.info(f"Building Gemini LLM: {model_name}")
@@ -40,6 +41,8 @@ def build_llm(
     }
     if cached_content:
         common["cached_content"] = cached_content
+    if max_output_tokens:
+        common["max_output_tokens"] = max_output_tokens
 
     project_id: str | None = None
     if settings.gcp_project_id:

@@ -35,6 +35,7 @@ def build_analyst_agent(
     checkpointer: Any = None,
     extra_tools: list[BaseTool] | None = None,
     cached_content: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> CompiledGraph:
     """
     Build and return an analyst ReAct agent.
@@ -44,19 +45,18 @@ def build_analyst_agent(
         checkpointer: Optional LangGraph checkpointer.
         extra_tools: Optional additional LangChain tools.
         cached_content: Optional Gemini context cache ID.
+        max_output_tokens: Optional max output tokens for generation.
 
     Returns:
         A compiled LangGraph agent.
     """
-    try:
-        combined_tools: list[str | BaseTool] = merge_tools(TOOLS, extra_tools)
-        res = build_agent(
-            tools=combined_tools,
-            system_prompt=SYSTEM_PROMPT,
-            model=model,
-            checkpointer=checkpointer,
-            cached_content=cached_content,
-        )
-        return res
-    except Exception:
-        raise
+    combined_tools: list[str | BaseTool] = merge_tools(TOOLS, extra_tools)
+    res = build_agent(
+        tools=combined_tools,
+        system_prompt=SYSTEM_PROMPT,
+        model=model,
+        checkpointer=checkpointer,
+        cached_content=cached_content,
+        max_output_tokens=max_output_tokens,
+    )
+    return res

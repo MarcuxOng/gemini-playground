@@ -1,0 +1,26 @@
+name: Hacktron Dependency Scan
+
+on:
+  pull_request:
+    paths:
+      - "**/package-lock.json"
+      - "**/pnpm-lock.yaml"
+      - "**/npm-shrinkwrap.json"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
+      - "**/requirements*.txt"
+      - "**/requirements/*.txt"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: HacktronAI/dependency-scan@v1

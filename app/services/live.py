@@ -10,6 +10,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 
 from app.config import build_genai_client
+from app.services.gemini import build_native_tools
 
 logger = logging.getLogger(__name__)
 client = build_genai_client()
@@ -27,13 +28,13 @@ async def live_session_handler(
         # Note: In a real implementation, we'd extract tools from the config_dict or agent preset.
         # For now, we'll support a basic config with native search if requested.
 
-        tools = []
-        if config_dict and "native_tools" in config_dict:
-            nt = config_dict["native_tools"]
-            if "search" in nt:
-                tools.append(types.Tool(google_search=types.GoogleSearch()))
-            if "code" in nt:
-                tools.append(types.Tool(code_execution=types.ToolCodeExecution()))
+        nt: list[str] = config_dict.get("native_tools", []) if config_dict else []
+        tools = build_native_tools(
+            grounding="search" in nt,
+            code_exec="code" in nt,
+            url_context="url" in nt,
+            location="location" in nt,
+        )
 
         live_config = types.LiveConnectConfig(
             tools=tools if tools else None,

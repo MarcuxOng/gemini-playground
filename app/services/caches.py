@@ -11,6 +11,20 @@ logger = logging.getLogger(__name__)
 client = build_genai_client()
 
 
+def _dict_from_cache(
+    cache: types.CachedContent, fallback_id: str = "", fallback_ttl: str = ""
+) -> dict[str, Any]:
+    """Serialize a CachedContent object to a consistent dict representation."""
+    return {
+        "cache_id": str(cache.name or fallback_id),
+        "model": str(cache.model or ""),
+        "display_name": str(cache.display_name or ""),
+        "ttl": str(_ttl) if (_ttl := getattr(cache, "ttl", None)) else fallback_ttl,
+        "create_time": str(cache.create_time) if cache.create_time else None,
+        "expire_time": str(cache.expire_time) if cache.expire_time else None,
+    }
+
+
 def create_context_cache(
     model: str,
     file_uris: list[str],
@@ -32,46 +46,18 @@ def create_context_cache(
     )
 
     cache = client.caches.create(model=model, config=config)
-
-    return {
-        "cache_id": str(cache.name or ""),
-        "model": str(cache.model or model),
-        "display_name": str(cache.display_name or ""),
-        "ttl": str(getattr(cache, "ttl", None) or ttl),
-        "create_time": str(cache.create_time) if cache.create_time else None,
-        "expire_time": str(cache.expire_time) if cache.expire_time else None,
-    }
+    return _dict_from_cache(cache, fallback_ttl=ttl)
 
 
 def get_cache(cache_id: str) -> dict[str, Any]:
     """Get a context cache by ID."""
     cache = client.caches.get(name=cache_id)
-    return {
-        "cache_id": str(cache.name or cache_id),
-        "model": str(cache.model or ""),
-        "display_name": str(cache.display_name or ""),
-        "ttl": str(_ttl) if (_ttl := getattr(cache, "ttl", None)) else None,
-        "create_time": str(cache.create_time) if cache.create_time else None,
-        "expire_time": str(cache.expire_time) if cache.expire_time else None,
-    }
+    return _dict_from_cache(cache, fallback_id=cache_id)
 
 
 def list_caches() -> list[dict[str, Any]]:
     """List all context caches."""
-    caches_list = client.caches.list()
-    results: list[dict[str, Any]] = []
-    for cache in caches_list:
-        results.append(
-            {
-                "cache_id": str(cache.name or ""),
-                "model": str(cache.model or ""),
-                "display_name": str(cache.display_name or ""),
-                "ttl": str(_ttl) if (_ttl := getattr(cache, "ttl", None)) else None,
-                "create_time": str(cache.create_time) if cache.create_time else None,
-                "expire_time": str(cache.expire_time) if cache.expire_time else None,
-            }
-        )
-    return results
+    return [_dict_from_cache(c) for c in client.caches.list()]
 
 
 def delete_cache(cache_id: str) -> None:
@@ -83,11 +69,4 @@ def update_cache_ttl(cache_id: str, ttl: str) -> dict[str, Any]:
     """Update the TTL of a context cache."""
     config = types.UpdateCachedContentConfig(ttl=ttl)
     cache = client.caches.update(name=cache_id, config=config)
-    return {
-        "cache_id": str(cache.name or cache_id),
-        "model": str(cache.model or ""),
-        "display_name": str(cache.display_name or ""),
-        "ttl": str(getattr(cache, "ttl", None) or ttl),
-        "create_time": str(cache.create_time) if cache.create_time else None,
-        "expire_time": str(cache.expire_time) if cache.expire_time else None,
-    }
+    return _dict_from_cache(cache, fallback_id=cache_id, fallback_ttl=ttl)
