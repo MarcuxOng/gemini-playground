@@ -41,7 +41,7 @@ def build_llm(
     }
     if cached_content:
         common["cached_content"] = cached_content
-    if max_output_tokens:
+    if max_output_tokens is not None:
         common["max_output_tokens"] = max_output_tokens
 
     project_id: str | None = None
