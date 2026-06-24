@@ -320,6 +320,8 @@ def gemini_service(
     Generation service consolidated on the LangChain path.
     Reaches for raw genai.Client only when attachments or native_tools are present since LangChain's Files API integration or native tools is less direct.
     """
+    if max_output_tokens is not None and max_output_tokens < 1:
+        raise ValueError(f"max_output_tokens must be >= 1, got {max_output_tokens}")
     max_tokens = (
         max_output_tokens if max_output_tokens is not None else settings.default_max_output_tokens
     )
