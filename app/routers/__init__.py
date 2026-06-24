@@ -9,6 +9,7 @@ from app.routers.gemini import router as gemini_router
 from app.routers.imagen import router as imagen_router
 from app.routers.live import router as live_router
 from app.routers.mcp_server import router as mcp_server_router
+from app.routers.multi_agent import router as multi_agent_router
 from app.routers.rag import router as rag_router
 from app.routers.threads import router as threads_router
 
@@ -24,4 +25,5 @@ all_routers = [
     live_router,
     imagen_router,
     caches_router,
+    multi_agent_router,
 ]
