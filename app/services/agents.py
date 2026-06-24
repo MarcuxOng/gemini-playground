@@ -61,7 +61,7 @@ class AgentRunRequest(BaseRequestModel):
     attachments: list[str] = []
     multimodal_prompt: list[Any] | None = None  # raw multimodal content list (MIAP)
     shared_cache_id: str | None = None
-    max_output_tokens: int | None = None
+    max_output_tokens: int | None = Field(default=None, ge=1)
 
     @field_validator("attachments")
     @classmethod

@@ -36,7 +36,7 @@ class ProviderInput(BaseRequestModel):
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url", "location"]] = []
     cache_id: str | None = None
-    max_output_tokens: int | None = None
+    max_output_tokens: int | None = Field(default=None, ge=1)
 
     @field_validator("attachments")
     @classmethod
@@ -48,7 +48,7 @@ class StructuredInput(BaseRequestModel):
     model: ModelName = "gemini-2.5-flash"
     prompt: str = Field(..., max_length=32_000)
     response_schema: dict[str, Any]  # JSON Schema dict
-    max_output_tokens: int | None = None
+    max_output_tokens: int | None = Field(default=None, ge=1)
 
 
 @router.get("/models", response_model=APIResponse)
