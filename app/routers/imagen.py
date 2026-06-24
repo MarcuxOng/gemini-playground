@@ -54,6 +54,9 @@ async def edit_image(
 ) -> APIResponse[ImageResponse]:
     """Edit an image based on a text prompt."""
     try:
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > 20 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
         content = await file.read()
         if len(content) > 20 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
