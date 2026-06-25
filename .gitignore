@@ -44,7 +44,6 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-eval/datasets/
 
 # IDEs
 .vscode/
@@ -99,7 +98,6 @@ conductor/
 *CLAUDE.md
 *AGENT.md
 *GEMINI.md
-*.json
 *.geminiignore
 
 # mypy
