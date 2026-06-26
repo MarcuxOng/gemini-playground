@@ -48,6 +48,7 @@ def mock_gemini_client_global():
         patch("app.services.gemini.build_llm", return_value=mock_llm_instance),
         patch("app.agents.base.build_llm", return_value=mock_llm_instance),
         patch("app.services.agents.run_once", side_effect=_mock_run_once),
+        patch("app.services.agents.get_checkpointer", return_value=None),
     ):
         yield mock_client
 
