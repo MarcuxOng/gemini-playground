@@ -86,3 +86,21 @@ async def verify_master_key(
         )
 
     request.state.api_key_id = "master"
+
+
+async def verify_internal_key(
+    request: Request,
+    x_internal_key: str = Header(..., alias="x-internal-key"),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """
+    Dependency for server-to-server internal endpoints.
+    Uses a dedicated internal_api_key separate from user API keys.
+    """
+    if not settings.internal_api_key or not secrets.compare_digest(
+        x_internal_key, settings.internal_api_key
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Internal access only.",
+        )

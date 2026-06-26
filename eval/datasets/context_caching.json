@@ -1,0 +1,26 @@
+[
+  {
+    "input": "Create a context cache for a document about machine learning with a system instruction 'You are an ML expert assistant.' Verify the cache was created with the correct model, display_name, and TTL.",
+    "expected": "API returns 200 with cache object containing cache_id, model=gemini-2.5-flash, display_name, and ttl=3600s"
+  },
+  {
+    "input": "List all context caches after creating one. Verify the newly created cache appears in the list.",
+    "expected": "API returns 200 with list containing at least the newly created cache's details"
+  },
+  {
+    "input": "Get a context cache by its cache_id. Verify the returned cache details match the creation parameters.",
+    "expected": "API returns 200 with the correct cache_id, model, and display_name"
+  },
+  {
+    "input": "Update a context cache's TTL from 3600s to 7200s. Verify the TTL field reflects the update.",
+    "expected": "API returns 200 with updated TTL showing 7200s"
+  },
+  {
+    "input": "Use the cached context in a Gemini generation request by passing cache_id. Verify the response uses cached content and returns a valid answer.",
+    "expected": "API returns 200 with response text; config passed to Gemini includes cached_content=cache_id"
+  },
+  {
+    "input": "Delete a context cache by cache_id. Verify the deletion succeeds with a confirmation response.",
+    "expected": "API returns 200 with data.deleted matching the cache_id"
+  }
+]

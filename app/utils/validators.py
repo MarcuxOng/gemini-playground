@@ -30,7 +30,7 @@ ModelName = Annotated[str, AfterValidator(_validate_model_name)]
 
 
 def validate_attachment_ids(v: list[str]) -> list[str]:
-    """Validator: only DB-owned UUIDs are accepted as attachment references."""
+    """Validator: ensure each value is a valid UUID v4 string."""
     for att in v:
         try:
             uuid.UUID(att)

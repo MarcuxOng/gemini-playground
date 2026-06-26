@@ -52,6 +52,12 @@ class SharedContext:
         if self._refresh_task is not None and not self._refresh_task.done():
             return
 
+        if self.ttl_seconds <= 0:
+            logger.warning(
+                "Cannot start refresh loop: ttl_seconds=%d must be positive.", self.ttl_seconds
+            )
+            return
+
         interval = min(max(int(self.ttl_seconds * 0.8), 60), self.ttl_seconds)
 
         async def _refresh_loop() -> None:

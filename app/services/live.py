@@ -28,7 +28,7 @@ async def live_session_handler(
         # Note: In a real implementation, we'd extract tools from the config_dict or agent preset.
         # For now, we'll support a basic config with native search if requested.
 
-        nt: list[str] = config_dict.get("native_tools", []) if config_dict else []
+        nt: list[str] = (config_dict.get("native_tools") or []) if config_dict else []
         tools = build_native_tools(
             grounding="search" in nt,
             code_exec="code" in nt,

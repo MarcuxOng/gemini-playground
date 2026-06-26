@@ -1,0 +1,22 @@
+[
+  {
+    "input": "Who won the men's singles title at the most recent Australian Open tournament?",
+    "expected": "The response must state the correct recent winner (e.g. Jannik Sinner or later winner) and include a web source citation link starting with https://."
+  },
+  {
+    "input": "What is the latest stable release version of the Python programming language?",
+    "expected": "The response must state the current stable release version (e.g. 3.12 or 3.13) and include a web source citation link starting with https://."
+  },
+  {
+    "input": "Who is the current Prime Minister of the United Kingdom?",
+    "expected": "The response must state Keir Starmer and include a web source citation link starting with https://."
+  },
+  {
+    "input": "Where is the 2028 Summer Olympic Games scheduled to be held?",
+    "expected": "The response must state Los Angeles and include a web source citation link starting with https://."
+  },
+  {
+    "input": "What is the capital of the country that hosts the 2026 FIFA World Cup along with USA and Mexico?",
+    "expected": "The response must state Ottawa (Canada) and include a web source citation link starting with https://."
+  }
+]

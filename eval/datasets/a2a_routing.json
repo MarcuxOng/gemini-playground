@@ -1,0 +1,18 @@
+[
+  {
+    "input": "What's the weather in Tokyo?",
+    "expected": "research"
+  },
+  {
+    "input": "Write a Python script to sort a list of numbers",
+    "expected": "coder"
+  },
+  {
+    "input": "What's the current price of AAPL stock?",
+    "expected": "analyst"
+  },
+  {
+    "input": "Search my knowledge base for documents about machine learning",
+    "expected": "knowledge"
+  }
+]

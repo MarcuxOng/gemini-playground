@@ -59,8 +59,9 @@ class AgentRunRequest(BaseRequestModel):
     prompt: str = Field(..., max_length=32_000)
     thread_id: str | None = None
     attachments: list[str] = []
+    multimodal_prompt: list[Any] | None = None  # raw multimodal content list (MIAP)
     shared_cache_id: str | None = None
-    max_output_tokens: int | None = None
+    max_output_tokens: int | None = Field(default=None, ge=1)
 
     @field_validator("attachments")
     @classmethod
@@ -270,7 +271,9 @@ async def run_agent_service(
         # Run the agent
         lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}
         prompt_input: Any = request.prompt
-        if request.attachments:
+        if request.multimodal_prompt:
+            prompt_input = request.multimodal_prompt
+        elif request.attachments:
             resolved = resolve_attachments(request.attachments, db, str(api_key.id))
             if not resolved:
                 raise HTTPException(
@@ -454,7 +457,9 @@ async def run_agent_stream_service(
 
         lg_config: dict[str, Any] = {"configurable": {"thread_id": thread.id}}
         prompt_input: Any = request.prompt
-        if request.attachments:
+        if request.multimodal_prompt:
+            prompt_input = request.multimodal_prompt
+        elif request.attachments:
             resolved = resolve_attachments(request.attachments, db, str(api_key.id))
             if not resolved:
                 raise HTTPException(
