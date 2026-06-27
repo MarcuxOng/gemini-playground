@@ -23,6 +23,8 @@ jobs:
       NEWS_API_KEY: "test"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -40,6 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Build Docker image
         run: docker build -t gemini-playground:ci .
       - name: Start container
