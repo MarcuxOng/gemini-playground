@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 _PRESET_META: dict[str, dict[str, Any]] = {
     "research": {
         "description": "Research assistant with web search, weather, Wikipedia, and YouTube tools.",
-        "tools": ["google_search", "get_weather", "get_datetime_info", "get_wikipedia_summary", "get_youtube_transcript"],
+        "tools": [
+            "google_search",
+            "get_weather",
+            "get_datetime_info",
+            "get_wikipedia_summary",
+            "get_youtube_transcript",
+        ],
     },
     "coder": {
         "description": "Senior software engineer with code generation, regex, file I/O, and math tools.",
@@ -192,9 +198,7 @@ class A2ARouter:
 
     # ── routing ────────────────────────────────────────────────────────────
 
-    async def route(
-        self, task: str, model: str = "gemini-2.5-flash"
-    ) -> tuple[str, AgentCard]:
+    async def route(self, task: str, model: str = "gemini-2.5-flash") -> tuple[str, AgentCard]:
         """Route *task* to the best-suited agent (host or peer) using Gemini.
 
         Builds a capability list from the host card (if provided) and all
@@ -219,7 +223,9 @@ class A2ARouter:
             candidates.append((peer_url, peer_card))
 
         if not candidates:
-            raise ValueError("No agents available for routing. Provide a host_card or discover peers.")
+            raise ValueError(
+                "No agents available for routing. Provide a host_card or discover peers."
+            )
 
         if len(candidates) == 1:
             return candidates[0]
