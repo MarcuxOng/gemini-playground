@@ -6,21 +6,20 @@ for server-to-server communication, or the standard API key for public endpoints
 
 from __future__ import annotations
 
+import base64
 import logging
-import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from app.agents import PRESETS
 from app.database.db import get_db
-from app.database.models import APIKey, Thread, ThreadMessage
+from app.database.models import APIKey
 from app.multi_agent.a2a import A2ARouter, build_agent_card
 from app.multi_agent.protocol import AgentMessage, agent_message_to_gemini_parts
 from app.services.agents import AgentRunResponse, run_agent_service
-from app.services.gemini import generate_thread_title
 from app.utils.auth import verify_api_key, verify_internal_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
@@ -89,7 +88,7 @@ async def agent_invoke(
 
     # Convert MIAP parts to text + multimodal content
     message_text = ""
-    multimodal_parts: list[dict[str]] = []
+    multimodal_parts: list[dict[str, Any]] = []
     for part in agent_message_to_gemini_parts(body.message):
         if part.text:
             message_text += part.text
@@ -98,7 +97,7 @@ async def agent_invoke(
             multimodal_parts.append(
                 {
                     "type": "media",
-                    "data": part.inline_data.data,
+                    "data": base64.b64encode(part.inline_data.data).decode(),
                     "mime_type": part.inline_data.mime_type or "application/octet-stream",
                 }
             )
@@ -122,38 +121,6 @@ async def agent_invoke(
         len(body.message.parts),
     )
 
-    # Handle threading
-    thread_id = body.thread_id or str(uuid.uuid4())
-    thread: Thread | None = None
-    if body.thread_id:
-        thread_query = db.query(Thread).filter(Thread.id == body.thread_id)
-        thread = thread_query.first()
-        if thread:
-            thread_id = thread.id
-
-    if not thread:
-        title = await run_in_threadpool(generate_thread_title, message_text, target_model)
-        thread = Thread(
-            id=thread_id,
-            owner_id="master",
-            preset=preset_name,
-            model=target_model,
-            title=title,
-        )
-        db.add(thread)
-        db.commit()
-        db.refresh(thread)
-
-    # Save human-style message
-    human_msg = ThreadMessage(
-        id=str(uuid.uuid4()),
-        thread_id=thread.id,
-        role="human",
-        content=f"[MIAP from {body.message.sender_id}] {message_text}",
-    )
-    db.add(human_msg)
-    db.commit()
-
     try:
         # Build synthetic AgentRunRequest for the target agent
         has_multimodal = any(p.get("type") == "media" for p in multimodal_parts)
@@ -161,9 +128,9 @@ async def agent_invoke(
             model=target_model,
             preset=body.target_preset,
             agent_id=body.target_agent_id,
-            prompt=message_text,
-            thread_id=thread.id,
-            attachments=[],  # MIAP parts are passed inline, not via attachments
+            prompt=f"[MIAP from {body.message.sender_id}] {message_text}",
+            thread_id=body.thread_id,
+            attachments=[],
             multimodal_prompt=multimodal_parts if has_multimodal else None,
         )
 
@@ -171,16 +138,6 @@ async def agent_invoke(
         master_key = APIKey(id="master", name="Master Key")
 
         response = await run_agent_service(run_request, db, master_key, fastapi_request=request)
-
-        # Save AI response
-        ai_msg = ThreadMessage(
-            id=str(uuid.uuid4()),
-            thread_id=thread.id,
-            role="ai",
-            content=response.answer,
-        )
-        db.add(ai_msg)
-        db.commit()
 
         return APIResponse(data=response)
 
