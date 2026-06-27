@@ -133,31 +133,50 @@ def test_agent_invoke_with_metadata(client: TestClient, internal_auth_headers):
     assert resp.status_code == 200
 
 
-def test_agent_invoke_with_thread_id(client: TestClient, internal_auth_headers):
-    """Passing a thread_id works and returns the same thread_id."""
+def test_agent_invoke_returns_new_thread_id_when_none_given(client: TestClient, internal_auth_headers):
+    """When no thread_id is provided a new thread is created and returned."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
             "target_preset": "research",
             "model": "gemini-2.5-flash",
             "message": {
-                "parts": [{"type": "text", "text": "follow-up question"}],
+                "parts": [{"type": "text", "text": "hello"}],
                 "sender_id": "agent-a",
             },
-            "thread_id": "test-thread-001",
         },
         headers=internal_auth_headers,
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["data"]["thread_id"] == "test-thread-001"
+    assert data["data"]["thread_id"] is not None
+
+
+def test_agent_invoke_returns_404_for_nonexistent_thread_id(client: TestClient, internal_auth_headers):
+    """A nonexistent thread_id returns 404."""
+    resp = client.post(
+        "/api/v1/agents/invoke",
+        json={
+            "target_preset": "research",
+            "model": "gemini-2.5-flash",
+            "message": {
+                "parts": [{"type": "text", "text": "follow-up"}],
+                "sender_id": "agent-a",
+            },
+            "thread_id": "nonexistent-thread-999",
+        },
+        headers=internal_auth_headers,
+    )
+    assert resp.status_code == 404
 
 
 def test_agent_message_model_validation():
     """AgentMessage Pydantic model enforces min 1 part."""
+    from pydantic import ValidationError
+
     from app.multi_agent.protocol import AgentMessage
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         AgentMessage(parts=[], sender_id="agent-a")
 
 
