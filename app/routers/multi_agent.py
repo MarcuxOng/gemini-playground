@@ -7,8 +7,10 @@ for server-to-server communication, or the standard API key for public endpoints
 from __future__ import annotations
 
 import base64
+import ipaddress
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
@@ -121,14 +123,17 @@ async def agent_invoke(
         len(body.message.parts),
     )
 
+    sender_prefix = f"[MIAP from {body.message.sender_id}] "
+    has_multimodal = any(p.get("type") == "media" for p in multimodal_parts)
+    if has_multimodal:
+        multimodal_parts.insert(0, {"type": "text", "text": sender_prefix})
+
     try:
-        # Build synthetic AgentRunRequest for the target agent
-        has_multimodal = any(p.get("type") == "media" for p in multimodal_parts)
         run_request = _AgentRunRequest(
             model=target_model,
             preset=body.target_preset,
             agent_id=body.target_agent_id,
-            prompt=f"[MIAP from {body.message.sender_id}] {message_text}",
+            prompt=f"{sender_prefix}{message_text}",
             thread_id=body.thread_id,
             attachments=[],
             multimodal_prompt=multimodal_parts if has_multimodal else None,
@@ -149,6 +154,33 @@ async def agent_invoke(
 
 
 # ── A2A Discovery Mesh (8.7) ────────────────────────────────────────────────────
+
+_SSRF_DENYLIST: set[str] = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+    "metadata.google.internal",
+    "169.254.169.254",
+}
+
+
+def _validate_peer_url(raw: str) -> None:
+    """Reject peer URLs targeting internal or private addresses (SSRF guard)."""
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail=f"Unsupported scheme in peer URL: {raw}")
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise HTTPException(status_code=400, detail=f"Invalid peer URL (no hostname): {raw}")
+    if hostname in _SSRF_DENYLIST:
+        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        return
+    if addr.is_loopback or addr.is_link_local or addr.is_private:
+        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
 
 
 class A2ARouteRequest(BaseModel):
@@ -179,6 +211,8 @@ async def a2a_route(
 
     discovered: list[str] = []
     if body.peer_urls:
+        for url in body.peer_urls:
+            _validate_peer_url(url)
         discovered = await router.discover(body.peer_urls)
 
     try:

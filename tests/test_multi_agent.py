@@ -374,13 +374,13 @@ class TestA2ARouter:
         host_card = build_agent_card("http://localhost:8000")
 
         scenarios = [
-            ("What's the weather in Tokyo?", "research"),
-            ("Write a Python script to sort a list", "coder"),
-            ("What's the current price of AAPL stock?", "analyst"),
+            ("What's the weather in Tokyo?", "research", 0),
+            ("Write a Python script to sort a list", "coder", 1),
+            ("What's the current price of AAPL stock?", "analyst", 2),
         ]
 
-        for task, expected_cap in scenarios:
-            mock_llm = self._make_mock_llm(expected_cap)
+        for task, expected_cap, idx in scenarios:
+            mock_llm = self._make_mock_llm(f"[{idx}]")
             with patch("app.multi_agent.a2a.build_llm", return_value=mock_llm):
                 # Add a peer to force multi-candidate routing through the LLM
                 peer_card = AgentCard(
