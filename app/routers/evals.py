@@ -30,7 +30,7 @@ class DatasetCreate(BaseRequestModel):
 class EvalRunRequest(BaseRequestModel):
     dataset_id: str
     agent_id_or_preset: str
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName
     max_output_tokens: int | None = None
 
 
