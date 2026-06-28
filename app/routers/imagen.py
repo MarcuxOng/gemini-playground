@@ -60,7 +60,7 @@ async def edit_image(
                 if int(content_length) > 20 * 1024 * 1024:
                     raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
             except ValueError:
-                pass
+                raise HTTPException(status_code=400, detail="Invalid Content-Length header") from None
         content = await file.read()
         if len(content) > 20 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
