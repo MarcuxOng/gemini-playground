@@ -8,6 +8,7 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.config import default_model
 from app.database.db import get_db
 from app.database.models import APIKey
 from app.services.rag import ingest_file_service, ingest_service, query_service
@@ -28,7 +29,7 @@ class IngestRequest(BaseRequestModel):
 
 
 class QueryRequest(BaseRequestModel):
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
     query: str = Field(..., max_length=4_000)
 
 

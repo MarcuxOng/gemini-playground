@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.agents import PRESETS
+from app.config import default_model, eval_model
 from app.database.db import get_db
 from app.database.models import APIKey
 from app.multi_agent.a2a import A2ARouter, build_agent_card
@@ -43,7 +44,7 @@ class InvokeRequest(BaseModel):
 
     target_preset: str | None = None
     target_agent_id: str | None = None
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
     message: AgentMessage
     thread_id: str | None = None
 
@@ -188,7 +189,7 @@ class A2ARouteRequest(BaseModel):
 
     task: str = Field(..., min_length=1, max_length=32_000)
     peer_urls: list[str] = Field(default_factory=list, max_length=20)
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
 
 
 @router.post("/a2a/route", response_model=APIResponse)

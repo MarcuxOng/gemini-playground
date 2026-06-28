@@ -6,15 +6,13 @@ import logging
 import re
 import uuid
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
+from fastapi import Request
+from typing import Any
 
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client, settings
-
-if TYPE_CHECKING:
-    from fastapi import Request
+from app.config import build_genai_client, default_model, settings
 from app.database.models import UploadedFile
 from app.services.llm import build_llm
 from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
@@ -456,7 +454,7 @@ def structured_service(
         raise
 
 
-def generate_thread_title(prompt: str, model: str = "gemini-2.5-flash") -> str:
+def generate_thread_title(prompt: str, model: str = default_model) -> str:
     """
     Generates a short (3-5 words) descriptive title for a thread based on the initial prompt.
     """

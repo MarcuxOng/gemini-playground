@@ -5,6 +5,7 @@ from pydantic import Field, field_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.config import default_model
 from app.database.db import get_db
 from app.database.models import APIKey
 from app.services import caches as caches_service
@@ -23,7 +24,7 @@ router = APIRouter(
 
 
 class CreateCacheInput(BaseRequestModel):
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
     attachments: list[str] = []
     system_instruction: str | None = Field(default=None, max_length=32_000)
     display_name: str | None = Field(default=None, max_length=256)

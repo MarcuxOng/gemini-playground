@@ -18,6 +18,7 @@ import httpx
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from app.config import default_model
 from app.services.llm import build_llm
 from app.tools import list_tool_names
 
@@ -78,7 +79,7 @@ class AgentCard(BaseModel):
     version: str = "1.0"
     protocol: str = "a2a/1.0"
     capabilities: list[A2ACapability] = Field(default_factory=list)
-    default_model: str = "gemini-2.5-flash"
+    default_model: str = default_model
     mcp_tools: list[str] = Field(default_factory=list)
     invoke_url: str | None = None
 
@@ -86,7 +87,7 @@ class AgentCard(BaseModel):
 # ── Agent Card builder ─────────────────────────────────────────────────────────
 
 
-def build_agent_card(base_url: str, default_model: str = "gemini-2.5-flash") -> AgentCard:
+def build_agent_card(base_url: str, default_model: str = default_model) -> AgentCard:
     """Build the host server's Agent Card from known presets and the tool registry.
 
     Args:
@@ -212,7 +213,7 @@ class A2ARouter:
 
     # ── routing ────────────────────────────────────────────────────────────
 
-    async def route(self, task: str, model: str = "gemini-2.5-flash") -> tuple[str, AgentCard]:
+    async def route(self, task: str, model: str = default_model) -> tuple[str, AgentCard]:
         """Route *task* to the best-suited agent (host or peer) using Gemini.
 
         Builds a capability list from the host card (if provided) and all
