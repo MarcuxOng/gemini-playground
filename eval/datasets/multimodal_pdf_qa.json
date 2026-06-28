@@ -7,7 +7,7 @@
   {
     "input": "According to the Gemini 1.5 report, what is the context window size and what are its benefits?",
     "attachments": ["https://storage.googleapis.com/deepmind-media/gemini/gemini_v1_5_report.pdf"],
-    "expected": "Gemini 1.5 Pro supports a long context window of up to 1 million tokens (and later 2 million). This allows it to process large datasets like long documents, hours of video, or large codebases in a single prompt, enabling tasks like 'needle in a haystack' retrieval and complex reasoning over long sequences."
+    "expected": "Gemini 1.5 Pro supports a long context window of up to 1 million tokens. This allows it to process large datasets like long documents, hours of video, or large codebases in a single prompt, enabling tasks like 'needle in a haystack' retrieval and complex reasoning over long sequences."
   },
   {
     "input": "What is the 'Long-context Multimodal' capability mentioned in the Gemini 1.5 Pro section?",
