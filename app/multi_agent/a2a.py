@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from app.services.llm import build_llm
 from app.tools import list_tool_names
@@ -134,7 +135,7 @@ TASK: {task}
 AGENTS:
 {agent_list}
 
-Respond with ONLY the agent name (one word, lowercase). No explanation, no punctuation."""
+Respond with ONLY the numeric agent ID in brackets, e.g. [2]. No explanation, no punctuation."""
 
 
 class PeerNotFoundError(Exception):
@@ -144,6 +145,19 @@ class PeerNotFoundError(Exception):
         self.url = url
         self.detail = detail
         super().__init__(f"Peer {url}: {detail}")
+
+
+def _parse_routing_index(raw: str) -> int | None:
+    """Extract a numeric index from a Geminid-generated bracket like ``[2]``."""
+    import re
+
+    match = re.search(r"\[(\d+)\]", raw)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
 
 
 class A2ARouter:
@@ -230,18 +244,22 @@ class A2ARouter:
         if len(candidates) == 1:
             return candidates[0]
 
-        # Build a flat list of capability entries for scoring
+        # Assign a unique index to each candidate for unambiguous resolution
+        index_map: dict[int, tuple[str, AgentCard]] = {}
         entries: list[str] = []
+        idx = 0
         for source_url, card in candidates:
             for cap in card.capabilities:
                 tools_str = ", ".join(cap.tools) if cap.tools else "none"
                 source_label = "host" if source_url == "host" else source_url
                 entries.append(
-                    f"Agent: {cap.name}\n"
+                    f"ID [{idx}]\n"
                     f"  Host: {source_label}\n"
                     f"  Description: {cap.description}\n"
                     f"  Tools: {tools_str}"
                 )
+                index_map[idx] = (source_url, card)
+                idx += 1
 
         prompt = _ROUTING_PROMPT.format(
             task=task,
@@ -249,15 +267,13 @@ class A2ARouter:
         )
 
         llm = build_llm(model, temperature=0.0)
-        result = llm.invoke(prompt)
-        selected = str(result.content).strip().lower().rstrip(".")
+        result = await run_in_threadpool(llm.invoke, prompt)
+        raw_selected = str(result.content).strip()
 
-        # Match selected name back to a candidate
-        for source_url, card in candidates:
-            for cap in card.capabilities:
-                if cap.name.lower() == selected:
-                    return source_url, card
+        parsed = _parse_routing_index(raw_selected)
+        if parsed is not None and parsed in index_map:
+            return index_map[parsed]
 
         raise ValueError(
-            f"Gemini selected capability '{selected}' but no candidate agent matches that name."
+            f"Gemini returned '{raw_selected}' but no candidate agent matches that identifier."
         )
