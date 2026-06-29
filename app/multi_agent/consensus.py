@@ -142,7 +142,8 @@ async def run_consensus(
     Returns:
         ConsensusResult with the synthesised answer and per-perspective outputs.
     """
-    perspectives = perspectives or DEFAULT_PERSPECTIVES
+    if perspectives is None:
+        perspectives = DEFAULT_PERSPECTIVES
     if not perspectives:
         raise ValueError("At least one perspective is required")
 
@@ -163,7 +164,6 @@ async def run_consensus(
         if isinstance(item, Exception):
             logger.warning("Worker '%s' failed: %s", perspectives[i], item)
             failed += 1
-            results.append({"perspective": perspectives[i], "response": f"[ERROR] {item}"})
         else:
             results.append(item)  # type: ignore[arg-type]
 
