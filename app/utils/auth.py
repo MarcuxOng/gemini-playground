@@ -39,7 +39,7 @@ def check_api_key(api_key: str, db: Session) -> bool:
 
 async def verify_api_key(
     request: Request,
-    x_api_key: str = Header(...),
+    x_api_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> APIKey:
@@ -47,6 +47,13 @@ async def verify_api_key(
     Dependency to verify API keys by hashing and checking the DB.
     Returns the APIKey record for the authenticated user.
     """
+    if not x_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing API key.",
+            headers={"WWW-Authenticate": "X-API-Key"},
+        )
+
     # 1. Check Master Key
     if settings.master_api_key and secrets.compare_digest(x_api_key, settings.master_api_key):
         request.state.api_key_id = "master"
