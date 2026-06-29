@@ -32,7 +32,7 @@ def _store_image(image_bytes: bytes, filepath: str, mime_type: str = "image/png"
     return _image_bytes_to_url(image_bytes, mime_type)
 
 
-def _extract_imagen_bytes(response) -> list[tuple[bytes, str]]:
+def _extract_imagen_bytes(response: types.GenerateImagesResponse) -> list[tuple[bytes, str]]:
     """Extract image data from a legacy Imagen generate_images response."""
     images: list[tuple[bytes, str]] = []
     if not response or not response.generated_images:
@@ -43,7 +43,7 @@ def _extract_imagen_bytes(response) -> list[tuple[bytes, str]]:
     return images
 
 
-def _extract_nano_banana_bytes(response) -> list[tuple[bytes, str]]:
+def _extract_nano_banana_bytes(response: types.GenerateContentResponse) -> list[tuple[bytes, str]]:
     """Extract inline image data from a Nano Banana generate_content response."""
     images: list[tuple[bytes, str]] = []
     if not response or not response.candidates:
