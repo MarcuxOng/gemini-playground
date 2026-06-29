@@ -536,3 +536,90 @@ class TestA2ARouteEndpoint:
             headers=auth_headers,
         )
         assert resp.status_code == 422
+
+
+# ── Phase 8.8 — Parallel Reasoning Engine ─────────────────────────────────────────
+
+
+class TestConsensusEndpoint:
+    """Tests for ``POST /api/v1/agents/consensus``."""
+
+    @staticmethod
+    def _patch_judge_response(mock_client, text=None):
+        """Patch ``client.models.generate_content`` with a JSON response the judge can parse."""
+        response = MagicMock()
+        response.text = text or '{"answer": "synthesised answer", "reasoning": "weighed perspectives", "consensus": true}'
+        response.candidates = []
+        response.prompt_feedback = None
+        return patch.object(mock_client.models, "generate_content", return_value=response)
+
+    def test_consensus_returns_401_without_auth(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/agents/consensus",
+            json={"prompt": "What is the best language for systems programming?"},
+        )
+        assert resp.status_code in (401, 422)
+
+    def test_consensus_returns_200_with_auth(self, client: TestClient, auth_headers, mock_gemini_client_global):
+        with self._patch_judge_response(mock_gemini_client_global):
+            resp = client.post(
+                "/api/v1/agents/consensus",
+                json={"prompt": "What is the best language for systems programming?"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert "answer" in data["data"]
+        assert "reasoning" in data["data"]
+        assert "consensus_reached" in data["data"]
+        assert "perspectives" in data["data"]
+        assert "failed_workers" in data["data"]
+
+    def test_consensus_returns_default_perspectives(self, client: TestClient, auth_headers, mock_gemini_client_global):
+        with self._patch_judge_response(mock_gemini_client_global):
+            resp = client.post(
+                "/api/v1/agents/consensus",
+                json={"prompt": "How should we structure a microservice?"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data["perspectives"]) == 4  # default perspectives
+
+    def test_consensus_accepts_custom_perspectives(self, client: TestClient, auth_headers, mock_gemini_client_global):
+        with self._patch_judge_response(mock_gemini_client_global):
+            resp = client.post(
+                "/api/v1/agents/consensus",
+                json={
+                    "prompt": "How should we structure a microservice?",
+                    "perspectives": ["backend engineer", "devops engineer"],
+                },
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data["perspectives"]) == 2
+        assert data["perspectives"][0]["perspective"] == "backend engineer"
+
+    def test_consensus_accepts_custom_models(self, client: TestClient, auth_headers, mock_gemini_client_global):
+        with self._patch_judge_response(mock_gemini_client_global):
+            resp = client.post(
+                "/api/v1/agents/consensus",
+                json={
+                    "prompt": "Explain the CAP theorem.",
+                    "model": "gemini-2.5-flash",
+                    "judge_model": "gemini-2.5-pro",
+                    "perspectives": ["DBA", "SRE"],
+                },
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+
+    def test_consensus_rejects_empty_prompt(self, client: TestClient, auth_headers):
+        resp = client.post(
+            "/api/v1/agents/consensus",
+            json={"prompt": ""},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422

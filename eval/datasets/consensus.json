@@ -1,0 +1,22 @@
+[
+  {
+    "input": "Our team is debating whether to use a monolith or microservices for a new e-commerce platform that will serve 10,000 daily users at launch. We have a team of 5 engineers. What should we choose and why?",
+    "expected": "Consensus answer should mention team size, complexity tradeoffs, operational overhead of microservices, and recommend monolith for 5-person team."
+  },
+  {
+    "input": "A feature flag caused a production outage. The on-call engineer reverted the flag, but the root cause is unclear. Should we do a full postmortem or just add better monitoring and move on?",
+    "expected": "Consensus answer should address both immediate remediation and long-term process improvement; weigh blame-free postmortem value against velocity cost."
+  },
+  {
+    "input": "We're choosing a database for a write-heavy application that needs strict consistency and will store ~500GB. Options are PostgreSQL, MongoDB, and CockroachDB. Which should we pick?",
+    "expected": "Consensus answer should evaluate each option against the requirements (write-heavy, strict consistency, 500GB) and provide a clear recommendation with tradeoffs."
+  },
+  {
+    "input": "A colleague proposes building our own authentication system instead of using OAuth with Google/GitHub. The argument is it gives us more control. Is this a good idea?",
+    "expected": "Consensus answer should raise security concerns about rolling own auth, note the maintenance burden, and recommend OAuth with MFA as the safer default."
+  },
+  {
+    "input": "We need to decide between hosting our own LLM (via Ollama + Gemma) or using Gemini API for a customer-facing chatbot that handles 1,000 conversations/day. Cost and latency are both concerns.",
+    "expected": "Consensus answer should compare self-hosted vs managed tradeoffs: infrastructure cost, latency, maintenance, scaling, and recommend one with justification."
+  }
+]

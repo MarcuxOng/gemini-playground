@@ -17,10 +17,11 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.agents import PRESETS
-from app.config import default_model, eval_model
+from app.config import default_model, eval_max_tokens, eval_model
 from app.database.db import get_db
 from app.database.models import APIKey
 from app.multi_agent.a2a import A2ARouter, build_agent_card
+from app.multi_agent.consensus import run_consensus
 from app.multi_agent.protocol import AgentMessage, agent_message_to_gemini_parts
 from app.services.agents import AgentRunResponse, run_agent_service
 from app.utils.auth import verify_api_key, verify_internal_key
@@ -231,3 +232,52 @@ async def a2a_route(
             "total_candidates": 1 + len(discovered),
         }
     )
+
+
+# ── Parallel Reasoning Engine (8.8) ──────────────────────────────────────────────
+
+
+class ConsensusRequest(BaseModel):
+    """Request body for the parallel reasoning consensus endpoint."""
+
+    prompt: str = Field(..., min_length=1, max_length=32_000)
+    model: ModelName = default_model
+    judge_model: ModelName = eval_model
+    perspectives: list[str] | None = None
+    max_output_tokens: int = Field(eval_max_tokens, ge=1, le=65_536)
+
+
+@router.post("/consensus", response_model=APIResponse)
+@limiter.limit("10/minute")
+async def agent_consensus(
+    request: Request,
+    body: ConsensusRequest,
+    api_key: APIKey = Depends(verify_api_key),
+) -> APIResponse:  # type: ignore[type-arg]
+    """Run the parallel reasoning engine.
+
+    Dispatches the prompt to N Gemini Flash workers simultaneously,
+    each with a different perspective system prompt. A Pro judge
+    synthesises the outputs into one robust response.
+    """
+    try:
+        request.state.model = f"{body.model}+{body.judge_model}"
+        result = await run_consensus(
+            prompt=body.prompt,
+            model=str(body.model),
+            perspectives=body.perspectives,
+            judge_model=str(body.judge_model),
+            max_output_tokens=body.max_output_tokens,
+            fastapi_request=request,
+        )
+        return APIResponse(data=result.to_dict())
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Consensus engine failed")
+        raise HTTPException(status_code=500, detail="Consensus engine failed.") from exc
