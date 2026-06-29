@@ -262,6 +262,12 @@ class A2ARouter:
                 index_map[idx] = (source_url, card)
                 idx += 1
 
+        if not entries:
+            raise ValueError(
+                "No agent capabilities available for routing. "
+                "Provide agents with at least one capability."
+            )
+
         prompt = _ROUTING_PROMPT.format(
             task=task,
             agent_list="\n".join(entries),
