@@ -12,7 +12,7 @@ from typing import Any
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client, default_model, settings
+from app.config import build_genai_client, default_max_tokens, default_model
 from app.database.models import UploadedFile
 from app.services.llm import build_llm
 from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
@@ -280,25 +280,30 @@ def build_native_tools(
 
 
 def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
-    """Record token counts on request.state if fastapi_request is provided.
+    """Record token counts on request.state, accumulating across multiple calls.
 
     Accepts either a raw genai types.GenerateContentResponseUsageMetadata
     (with prompt_token_count / candidates_token_count) or a LangChain
     UsageMetadata dict (with input_tokens / output_tokens).
+
+    Accumulates (sums) into existing request.state values so that endpoints
+    making multiple LLM calls (e.g. consensus with N workers + 1 judge)
+    report the total tokens across all calls.
     """
     if fastapi_request is None or usage_metadata is None:
         return
     try:
         if hasattr(usage_metadata, "prompt_token_count"):
-            fastapi_request.state.input_tokens = int(
-                getattr(usage_metadata, "prompt_token_count", 0) or 0
-            )
-            fastapi_request.state.output_tokens = int(
-                getattr(usage_metadata, "candidates_token_count", 0) or 0
-            )
+            inp = int(getattr(usage_metadata, "prompt_token_count", 0) or 0)
+            out = int(getattr(usage_metadata, "candidates_token_count", 0) or 0)
         else:
-            fastapi_request.state.input_tokens = int(usage_metadata.get("input_tokens", 0))
-            fastapi_request.state.output_tokens = int(usage_metadata.get("output_tokens", 0))
+            inp = int(usage_metadata.get("input_tokens", 0))
+            out = int(usage_metadata.get("output_tokens", 0))
+
+        prev_in = getattr(fastapi_request.state, "input_tokens", 0)
+        prev_out = getattr(fastapi_request.state, "output_tokens", 0)
+        fastapi_request.state.input_tokens = prev_in + inp
+        fastapi_request.state.output_tokens = prev_out + out
     except Exception:
         pass  # token tracking is best-effort
 
@@ -321,7 +326,7 @@ def gemini_service(
     if max_output_tokens is not None and max_output_tokens < 1:
         raise ValueError(f"max_output_tokens must be >= 1, got {max_output_tokens}")
     max_tokens = (
-        max_output_tokens if max_output_tokens is not None else settings.default_max_output_tokens
+        max_output_tokens if max_output_tokens is not None else default_max_tokens
     )
 
     try:
@@ -425,7 +430,7 @@ def structured_service(
     Returns guaranteed-valid JSON matching the provided schema.
     """
     max_tokens = (
-        max_output_tokens if max_output_tokens is not None else settings.default_max_output_tokens
+        max_output_tokens if max_output_tokens is not None else default_max_tokens
     )
 
     try:
@@ -488,7 +493,7 @@ async def gemini_stream_service(
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     max_tokens = (
-        max_output_tokens if max_output_tokens is not None else settings.default_max_output_tokens
+        max_output_tokens if max_output_tokens is not None else default_max_tokens
     )
 
     try:
