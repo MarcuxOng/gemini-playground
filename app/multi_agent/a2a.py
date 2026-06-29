@@ -213,7 +213,9 @@ class A2ARouter:
 
     # ── routing ────────────────────────────────────────────────────────────
 
-    async def route(self, task: str, model: str = default_model, cache_id: str | None = None) -> tuple[str, AgentCard]:
+    async def route(
+        self, task: str, model: str = default_model, cache_id: str | None = None
+    ) -> tuple[str, AgentCard]:
         """Route *task* to the best-suited agent (host or peer) using Gemini.
 
         Builds a capability list from the host card (if provided) and all

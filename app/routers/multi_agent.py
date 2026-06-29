@@ -253,7 +253,9 @@ async def a2a_route(
         discovered = await router.discover(body.peer_urls)
 
     try:
-        selected_url, selected_card = await router.route(body.task, model=str(body.model), cache_id=body.shared_cache_id)
+        selected_url, selected_card = await router.route(
+            body.task, model=str(body.model), cache_id=body.shared_cache_id
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
