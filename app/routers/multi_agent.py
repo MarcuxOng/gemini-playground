@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import logging
+import socket
 from typing import Any
 from urllib.parse import urlparse
 
@@ -180,9 +181,34 @@ def _validate_peer_url(raw: str) -> None:
     try:
         addr = ipaddress.ip_address(hostname)
     except ValueError:
-        return
-    if addr.is_loopback or addr.is_link_local or addr.is_private:
-        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
+        addr = None
+
+    addresses_to_check: list[str] = []
+    if addr is not None:
+        addresses_to_check = [hostname]
+    else:
+        try:
+            resolved = socket.getaddrinfo(hostname, None)
+            addresses_to_check = [r[4][0] for r in resolved]
+        except socket.gaierror as err:
+            raise HTTPException(
+                status_code=400, detail=f"Peer URL hostname cannot be resolved: {raw}"
+            ) from err
+
+    for ip_str in addresses_to_check:
+        if ip_str in _SSRF_DENYLIST:
+            raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
+        try:
+            ip_addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if (
+            ip_addr.is_loopback
+            or ip_addr.is_link_local
+            or ip_addr.is_private
+            or ip_addr.is_unspecified
+        ):
+            raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
 
 
 class A2ARouteRequest(BaseModel):
