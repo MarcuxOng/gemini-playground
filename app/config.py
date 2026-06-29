@@ -26,8 +26,12 @@ class Settings(BaseSettings):
 
     # Gemini API keys (optional in production — ADC via service account is used instead)
     gemini_api_key: str | None = None
+
+    # Preset Gemini Models
     gemini_default_model: str = "gemini-2.5-flash"
     gemini_eval_model: str = "gemini-3.1-pro-preview"
+    gemini_image_model: str = "gemini-2.5-flash-image"
+    gemini_embedding_model: str = "gemini-embedding-2"
 
     # GCP Infrastructure
     gcp_project_id: str
@@ -48,8 +52,7 @@ class Settings(BaseSettings):
     pinecone_namespace: str
     pinecone_index_name: str
     pinecone_api_key: str
-    gemini_embedding_model: str = "gemini-embedding-2"
-
+    
     # Base URLs
     alpha_vantage_base_url: str = "https://www.alphavantage.co/query"
     crypto_base_url: str = "https://api.coingecko.com/api/v3"
@@ -64,6 +67,11 @@ class Settings(BaseSettings):
         # Gemini API dev uses gemini-embedding-2 (3072 dims). Explicit env var overrides.
         if os.getenv("ENV") == "production" and self.gemini_embedding_model == "gemini-embedding-2":
             self.gemini_embedding_model = "multimodalembedding"
+
+        # Env-aware image model: Vertex AI prod does not expose gemini-2.5-flash-image
+        # (Nano Banana); fall back to Imagen. Gemini API dev uses Nano Banana directly.
+        if os.getenv("ENV") == "production" and self.gemini_image_model == "gemini-2.5-flash-image":
+            self.gemini_image_model = "imagen-4.0-generate-001"
 
         # Attempt to fetch secrets from Secret Manager if running in production (indicated by env)
         if os.getenv("ENV") == "production":
