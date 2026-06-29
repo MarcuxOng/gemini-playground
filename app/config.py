@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     pinecone_namespace: str
     pinecone_index_name: str
     pinecone_api_key: str
-    
+
     # Base URLs
     alpha_vantage_base_url: str = "https://www.alphavantage.co/query"
     crypto_base_url: str = "https://api.coingecko.com/api/v3"
