@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.agents import PRESETS, build_agent, run_once
-from app.config import settings
+from app.config import default_max_tokens, default_model
 from app.database.models import Agents, APIKey, MCPServerConfig, Thread, ThreadMessage
 from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
@@ -34,7 +34,7 @@ class AgentCreate(BaseRequestModel):
     description: str | None = None
     system_prompt: str
     tools: list[str]
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
 
 
 class AgentResponse(BaseModel):
@@ -52,7 +52,7 @@ class AgentResponse(BaseModel):
 
 
 class AgentRunRequest(BaseRequestModel):
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
     preset: str | None = None  # hardcoded preset name
     agent_id: str | None = None  # DB-backed config id — takes priority
     mcp_server_ids: list[str] | None = None  # external MCP servers to connect to
@@ -241,7 +241,7 @@ async def run_agent_service(
         max_tokens = (
             request.max_output_tokens
             if request.max_output_tokens is not None
-            else settings.default_max_output_tokens
+            else default_max_tokens
         )
 
         # Build or get cached agent
@@ -429,7 +429,7 @@ async def run_agent_stream_service(
         max_tokens = (
             request.max_output_tokens
             if request.max_output_tokens is not None
-            else settings.default_max_output_tokens
+            else default_max_tokens
         )
 
         # Build or get cached agent

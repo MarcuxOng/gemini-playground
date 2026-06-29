@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # Gemini API keys (optional in production — ADC via service account is used instead)
     gemini_api_key: str | None = None
+    gemini_default_model: str = "gemini-2.5-flash"
+    gemini_eval_model: str = "gemini-3.1-pro-preview"
 
     # GCP Infrastructure
     gcp_project_id: str
@@ -35,6 +37,7 @@ class Settings(BaseSettings):
 
     # Generation defaults
     default_max_output_tokens: int = 1024
+    eval_max_output_tokens: int = 4096
 
     # Tools API keys
     alpha_vantage_api_key: str
@@ -91,3 +94,9 @@ def build_genai_client() -> genai.Client:
     return genai.Client(
         vertexai=True, project=settings.gcp_project_id, location=settings.gcp_region
     )
+
+
+default_model = settings.gemini_default_model
+eval_model = settings.gemini_eval_model
+default_max_tokens = settings.default_max_output_tokens
+eval_max_tokens = settings.eval_max_output_tokens

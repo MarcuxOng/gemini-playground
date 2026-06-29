@@ -15,7 +15,7 @@ async def main() -> None:
     run_parser = subparsers.add_parser("run", help="Run an evaluation")
     run_parser.add_argument("dataset", help="Dataset ID or Name")
     run_parser.add_argument("agent", help="Agent preset (research, coder, analyst, knowledge)")
-    run_parser.add_argument("--model", default="gemini-2.5-flash", help="Model to use")
+    run_parser.add_argument("--model", required=True, help="Model to use")
 
     args = parser.parse_args()
     db = SessionLocal()

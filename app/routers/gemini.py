@@ -11,6 +11,7 @@ from pydantic import Field, field_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.config import default_model
 from app.database.db import get_db
 from app.database.models import APIKey
 from app.services.gemini import (
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/api/v1/gemini", tags=["Gemini"], dependencies=[Depen
 
 
 class ProviderInput(BaseRequestModel):
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
     prompt: str = Field(..., max_length=32_000)
     attachments: list[str] = []
     native_tools: list[Literal["search", "code", "url", "location"]] = []
@@ -45,7 +46,7 @@ class ProviderInput(BaseRequestModel):
 
 
 class StructuredInput(BaseRequestModel):
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
     prompt: str = Field(..., max_length=32_000)
     response_schema: dict[str, Any]  # JSON Schema dict
     max_output_tokens: int | None = Field(default=None, ge=1)

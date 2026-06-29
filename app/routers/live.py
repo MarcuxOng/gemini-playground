@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketState
 
-from app.config import Settings, get_settings
+from app.config import Settings, default_model, get_settings
 from app.database.db import get_db
 from app.database.models import APIKey
 from app.services.live import live_session_handler
@@ -42,7 +42,7 @@ def verify_ws_api_key(db: Session, settings: Settings, api_key: str | None = Non
 @router.websocket("/ws")
 async def live_ws_endpoint(
     websocket: WebSocket,
-    model: ModelName = Query("gemini-2.5-flash"),
+    model: ModelName = Query(default_model),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> None:

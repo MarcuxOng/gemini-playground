@@ -7,17 +7,21 @@ for server-to-server communication, or the standard API key for public endpoints
 from __future__ import annotations
 
 import base64
+import ipaddress
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.agents import PRESETS
+from app.config import default_model, eval_max_tokens, eval_model
 from app.database.db import get_db
 from app.database.models import APIKey
 from app.multi_agent.a2a import A2ARouter, build_agent_card
+from app.multi_agent.consensus import run_consensus
 from app.multi_agent.protocol import AgentMessage, agent_message_to_gemini_parts
 from app.services.agents import AgentRunResponse, run_agent_service
 from app.utils.auth import verify_api_key, verify_internal_key
@@ -41,7 +45,7 @@ class InvokeRequest(BaseModel):
 
     target_preset: str | None = None
     target_agent_id: str | None = None
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
     message: AgentMessage
     thread_id: str | None = None
 
@@ -121,14 +125,17 @@ async def agent_invoke(
         len(body.message.parts),
     )
 
+    sender_prefix = f"[MIAP from {body.message.sender_id}] "
+    has_multimodal = any(p.get("type") == "media" for p in multimodal_parts)
+    if has_multimodal:
+        multimodal_parts.insert(0, {"type": "text", "text": sender_prefix})
+
     try:
-        # Build synthetic AgentRunRequest for the target agent
-        has_multimodal = any(p.get("type") == "media" for p in multimodal_parts)
         run_request = _AgentRunRequest(
             model=target_model,
             preset=body.target_preset,
             agent_id=body.target_agent_id,
-            prompt=f"[MIAP from {body.message.sender_id}] {message_text}",
+            prompt=f"{sender_prefix}{message_text}",
             thread_id=body.thread_id,
             attachments=[],
             multimodal_prompt=multimodal_parts if has_multimodal else None,
@@ -150,13 +157,40 @@ async def agent_invoke(
 
 # ── A2A Discovery Mesh (8.7) ────────────────────────────────────────────────────
 
+_SSRF_DENYLIST: set[str] = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+    "metadata.google.internal",
+    "169.254.169.254",
+}
+
+
+def _validate_peer_url(raw: str) -> None:
+    """Reject peer URLs targeting internal or private addresses (SSRF guard)."""
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail=f"Unsupported scheme in peer URL: {raw}")
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise HTTPException(status_code=400, detail=f"Invalid peer URL (no hostname): {raw}")
+    if hostname in _SSRF_DENYLIST:
+        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        return
+    if addr.is_loopback or addr.is_link_local or addr.is_private:
+        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
+
 
 class A2ARouteRequest(BaseModel):
     """Request body for the A2A routing endpoint."""
 
     task: str = Field(..., min_length=1, max_length=32_000)
     peer_urls: list[str] = Field(default_factory=list, max_length=20)
-    model: ModelName = "gemini-2.5-flash"
+    model: ModelName = default_model
 
 
 @router.post("/a2a/route", response_model=APIResponse)
@@ -179,6 +213,8 @@ async def a2a_route(
 
     discovered: list[str] = []
     if body.peer_urls:
+        for url in body.peer_urls:
+            _validate_peer_url(url)
         discovered = await router.discover(body.peer_urls)
 
     try:
@@ -196,3 +232,52 @@ async def a2a_route(
             "total_candidates": 1 + len(discovered),
         }
     )
+
+
+# ── Parallel Reasoning Engine (8.8) ──────────────────────────────────────────────
+
+
+class ConsensusRequest(BaseModel):
+    """Request body for the parallel reasoning consensus endpoint."""
+
+    prompt: str = Field(..., min_length=1, max_length=32_000)
+    model: ModelName = default_model
+    judge_model: ModelName = eval_model
+    perspectives: list[str] | None = None
+    max_output_tokens: int = Field(eval_max_tokens, ge=1, le=65_536)
+
+
+@router.post("/consensus", response_model=APIResponse)
+@limiter.limit("10/minute")
+async def agent_consensus(
+    request: Request,
+    body: ConsensusRequest,
+    api_key: APIKey = Depends(verify_api_key),
+) -> APIResponse:  # type: ignore[type-arg]
+    """Run the parallel reasoning engine.
+
+    Dispatches the prompt to N Gemini Flash workers simultaneously,
+    each with a different perspective system prompt. A Pro judge
+    synthesises the outputs into one robust response.
+    """
+    try:
+        request.state.model = f"{body.model}+{body.judge_model}"
+        result = await run_consensus(
+            prompt=body.prompt,
+            model=str(body.model),
+            perspectives=body.perspectives,
+            judge_model=str(body.judge_model),
+            max_output_tokens=body.max_output_tokens,
+            fastapi_request=request,
+        )
+        return APIResponse(data=result.to_dict())
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Consensus engine failed")
+        raise HTTPException(status_code=500, detail="Consensus engine failed.") from exc
