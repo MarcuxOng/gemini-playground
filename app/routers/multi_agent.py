@@ -271,12 +271,11 @@ async def a2a_route(
     )
 
 
-@router.post("/consensus", response_model=APIResponse)
+@router.post("/consensus", response_model=APIResponse, dependencies=[Depends(verify_api_key)])
 @limiter.limit("10/minute")
 async def agent_consensus(
     request: Request,
     body: ConsensusRequest,
-    api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     """Run the parallel reasoning engine.
 
