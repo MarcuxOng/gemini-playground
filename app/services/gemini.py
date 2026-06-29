@@ -6,9 +6,9 @@ import logging
 import re
 import uuid
 from collections.abc import AsyncGenerator
-from fastapi import Request
 from typing import Any
 
+from fastapi import Request
 from google.genai import types
 from sqlalchemy.orm import Session
 
