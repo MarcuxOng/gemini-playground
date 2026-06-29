@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     # Generation defaults
     default_max_output_tokens: int = 1024
+    eval_max_output_tokens: int = 4096
 
     # Tools API keys
     alpha_vantage_api_key: str
@@ -96,3 +97,5 @@ def build_genai_client() -> genai.Client:
 
 default_model = settings.gemini_default_model
 eval_model = settings.gemini_eval_model
+default_max_tokens = settings.default_max_output_tokens
+eval_max_tokens = settings.eval_max_output_tokens
