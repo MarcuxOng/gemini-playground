@@ -75,7 +75,7 @@ class Settings(BaseSettings):
 
         # Attempt to fetch secrets from Secret Manager if running in production (indicated by env)
         if os.getenv("ENV") == "production":
-            for field in self.model_fields:
+            for field in Settings.model_fields:
                 val = getattr(self, field)
                 # If field looks like a secret, try fetching it if it's missing or empty
                 if not val and field in [
