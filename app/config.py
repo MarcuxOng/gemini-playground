@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Gemini API keys (optional in production — ADC via service account is used instead)
     gemini_api_key: str | None = None
     gemini_default_model: str = "gemini-2.5-flash"
-    gemini_eval_model: str = "gemini-3.1-pro"
+    gemini_eval_model: str = "gemini-3.1-pro-preview"
 
     # GCP Infrastructure
     gcp_project_id: str
