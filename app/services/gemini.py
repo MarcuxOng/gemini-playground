@@ -432,6 +432,7 @@ def structured_service(
     schema: dict[str, Any],
     fastapi_request: Request | None = None,
     max_output_tokens: int | None = None,
+    cache_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Structured output service using raw genai.Client.
@@ -441,15 +442,18 @@ def structured_service(
 
     try:
         logger.info(f"Generating structured content with Gemini model: {model}")
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            safety_settings=SAFETY_SETTINGS,
+            max_output_tokens=max_tokens,
+        )
+        if cache_id:
+            config.cached_content = cache_id
         response = client.models.generate_content(
             model=model,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=schema,
-                safety_settings=SAFETY_SETTINGS,
-                max_output_tokens=max_tokens,
-            ),
+            config=config,
         )
         _check_safety_block(response, model)
         _set_request_tokens(fastapi_request, response.usage_metadata)
