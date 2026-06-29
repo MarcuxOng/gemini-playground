@@ -325,9 +325,7 @@ def gemini_service(
     """
     if max_output_tokens is not None and max_output_tokens < 1:
         raise ValueError(f"max_output_tokens must be >= 1, got {max_output_tokens}")
-    max_tokens = (
-        max_output_tokens if max_output_tokens is not None else default_max_tokens
-    )
+    max_tokens = max_output_tokens if max_output_tokens is not None else default_max_tokens
 
     try:
         if attachments and (not db or not owner_id):
@@ -429,9 +427,7 @@ def structured_service(
     Structured output service using raw genai.Client.
     Returns guaranteed-valid JSON matching the provided schema.
     """
-    max_tokens = (
-        max_output_tokens if max_output_tokens is not None else default_max_tokens
-    )
+    max_tokens = max_output_tokens if max_output_tokens is not None else default_max_tokens
 
     try:
         logger.info(f"Generating structured content with Gemini model: {model}")
@@ -492,9 +488,7 @@ async def gemini_stream_service(
     max_output_tokens: int | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
-    max_tokens = (
-        max_output_tokens if max_output_tokens is not None else default_max_tokens
-    )
+    max_tokens = max_output_tokens if max_output_tokens is not None else default_max_tokens
 
     try:
         if attachments and (not db or not owner_id):

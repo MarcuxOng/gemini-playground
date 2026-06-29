@@ -95,6 +95,7 @@ def build_genai_client() -> genai.Client:
         vertexai=True, project=settings.gcp_project_id, location=settings.gcp_region
     )
 
+
 default_model = settings.gemini_default_model
 eval_model = settings.gemini_eval_model
 default_max_tokens = settings.default_max_output_tokens

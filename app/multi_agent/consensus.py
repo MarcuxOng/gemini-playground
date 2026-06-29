@@ -62,7 +62,7 @@ _JUDGE_SCHEMA: dict[str, Any] = {
             "type": "BOOLEAN",
             "description": "True if the perspectives broadly agreed, False if significant disagreement remains.",
         },
-      },
+    },
     "required": ["answer", "reasoning", "consensus"],
 }
 
@@ -154,9 +154,7 @@ async def run_consensus(
         judge_model,
     )
 
-    worker_tasks = [
-        _run_worker(prompt, p, model, fastapi_request) for p in perspectives
-    ]
+    worker_tasks = [_run_worker(prompt, p, model, fastapi_request) for p in perspectives]
     gathered = await asyncio.gather(*worker_tasks, return_exceptions=True)
 
     results: list[dict[str, str]] = []
@@ -165,9 +163,7 @@ async def run_consensus(
         if isinstance(item, Exception):
             logger.warning("Worker '%s' failed: %s", perspectives[i], item)
             failed += 1
-            results.append(
-                {"perspective": perspectives[i], "response": f"[ERROR] {item}"}
-            )
+            results.append({"perspective": perspectives[i], "response": f"[ERROR] {item}"})
         else:
             results.append(item)  # type: ignore[arg-type]
 
@@ -183,7 +179,12 @@ async def run_consensus(
 
     try:
         judge_result = await run_in_threadpool(
-            structured_service, judge_model, judge_prompt, _JUDGE_SCHEMA, fastapi_request, max_output_tokens
+            structured_service,
+            judge_model,
+            judge_prompt,
+            _JUDGE_SCHEMA,
+            fastapi_request,
+            max_output_tokens,
         )
     except Exception as exc:
         logger.error("Consensus judge failed: %s", exc)
@@ -195,7 +196,9 @@ async def run_consensus(
 
     if failed > 0:
         plural = "s" if failed != 1 else ""
-        note = _PARTIAL_RESULTS_WARNING.format(n_failed=failed, n_total=len(perspectives), plural=plural)
+        note = _PARTIAL_RESULTS_WARNING.format(
+            n_failed=failed, n_total=len(perspectives), plural=plural
+        )
         answer = f"{note}\n\n{answer}"
 
     return ConsensusResult(
