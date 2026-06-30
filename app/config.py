@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     database_url: str | None = None
     master_api_key: str
 
+    # Clerk auth
+    clerk_secret_key: str | None = None
+    clerk_publishable_key: str | None = None
+
     # Internal agent-to-agent protocol key (x-internal-key header)
     internal_api_key: str
 

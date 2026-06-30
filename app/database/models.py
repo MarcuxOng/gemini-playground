@@ -26,6 +26,7 @@ class APIKey(Base):
     name = Column(String, index=True)
     hashed_key = Column(String, unique=True, index=True)
     is_active = Column(Boolean, default=True)
+    clerk_user_id = Column(String, nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     revoked_at = Column(DateTime, nullable=True)
 
