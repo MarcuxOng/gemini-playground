@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -38,6 +39,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, Any]:
 app = FastAPI(title="Gemini Playground", description="", version="1.0.0", lifespan=lifespan)
 
 # Add middlewares
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(MCPAuthMiddleware)
 app.add_middleware(UsageLoggingMiddleware)
 
