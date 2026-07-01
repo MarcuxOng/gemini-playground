@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import re
+import threading
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -289,10 +290,18 @@ def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
     Accumulates (sums) into existing request.state values so that endpoints
     making multiple LLM calls (e.g. consensus with N workers + 1 judge)
     report the total tokens across all calls.
+
+    Uses a threading.Lock stored on request.state to avoid races when
+    concurrent run_in_threadpool() calls update the same state.
     """
     if fastapi_request is None or usage_metadata is None:
         return
     try:
+        lock = getattr(fastapi_request.state, "_token_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            fastapi_request.state._token_lock = lock
+
         if hasattr(usage_metadata, "prompt_token_count"):
             inp = int(getattr(usage_metadata, "prompt_token_count", 0) or 0)
             out = int(getattr(usage_metadata, "candidates_token_count", 0) or 0)
@@ -300,10 +309,11 @@ def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
             inp = int(usage_metadata.get("input_tokens", 0))
             out = int(usage_metadata.get("output_tokens", 0))
 
-        prev_in = getattr(fastapi_request.state, "input_tokens", 0)
-        prev_out = getattr(fastapi_request.state, "output_tokens", 0)
-        fastapi_request.state.input_tokens = prev_in + inp
-        fastapi_request.state.output_tokens = prev_out + out
+        with lock:
+            prev_in = getattr(fastapi_request.state, "input_tokens", 0)
+            prev_out = getattr(fastapi_request.state, "output_tokens", 0)
+            fastapi_request.state.input_tokens = prev_in + inp
+            fastapi_request.state.output_tokens = prev_out + out
     except Exception:
         pass  # token tracking is best-effort
 
@@ -422,6 +432,7 @@ def structured_service(
     schema: dict[str, Any],
     fastapi_request: Request | None = None,
     max_output_tokens: int | None = None,
+    cache_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Structured output service using raw genai.Client.
@@ -431,15 +442,18 @@ def structured_service(
 
     try:
         logger.info(f"Generating structured content with Gemini model: {model}")
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            safety_settings=SAFETY_SETTINGS,
+            max_output_tokens=max_tokens,
+        )
+        if cache_id:
+            config.cached_content = cache_id
         response = client.models.generate_content(
             model=model,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=schema,
-                safety_settings=SAFETY_SETTINGS,
-                max_output_tokens=max_tokens,
-            ),
+            config=config,
         )
         _check_safety_block(response, model)
         _set_request_tokens(fastapi_request, response.usage_metadata)

@@ -213,7 +213,9 @@ class A2ARouter:
 
     # ── routing ────────────────────────────────────────────────────────────
 
-    async def route(self, task: str, model: str = default_model) -> tuple[str, AgentCard]:
+    async def route(
+        self, task: str, model: str = default_model, cache_id: str | None = None
+    ) -> tuple[str, AgentCard]:
         """Route *task* to the best-suited agent (host or peer) using Gemini.
 
         Builds a capability list from the host card (if provided) and all
@@ -223,6 +225,7 @@ class A2ARouter:
         Args:
             task: Natural-language task description.
             model: Gemini model used for capability scoring.
+            cache_id: Optional Gemini context cache for the routing LLM call.
 
         Returns:
             Tuple of ``(peer_url_or_"host", AgentCard)``.
@@ -262,12 +265,18 @@ class A2ARouter:
                 index_map[idx] = (source_url, card)
                 idx += 1
 
+        if not entries:
+            raise ValueError(
+                "No agent capabilities available for routing. "
+                "Provide agents with at least one capability."
+            )
+
         prompt = _ROUTING_PROMPT.format(
             task=task,
             agent_list="\n".join(entries),
         )
 
-        llm = build_llm(model, temperature=0.0)
+        llm = build_llm(model, temperature=0.0, cached_content=cache_id)
         result = await run_in_threadpool(llm.invoke, prompt)
         raw_selected = str(result.content).strip()
 

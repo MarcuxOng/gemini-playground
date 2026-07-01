@@ -558,7 +558,7 @@ class TestConsensusEndpoint:
             "/api/v1/agents/consensus",
             json={"prompt": "What is the best language for systems programming?"},
         )
-        assert resp.status_code in (401, 422)
+        assert resp.status_code == 401
 
     def test_consensus_returns_200_with_auth(self, client: TestClient, auth_headers, mock_gemini_client_global):
         with self._patch_judge_response(mock_gemini_client_global):
@@ -603,6 +603,11 @@ class TestConsensusEndpoint:
         assert data["perspectives"][0]["perspective"] == "backend engineer"
 
     def test_consensus_accepts_custom_models(self, client: TestClient, auth_headers, mock_gemini_client_global):
+        import app.services.gemini as gemini_svc
+
+        # Snapshot build_llm call count to isolate this test
+        build_llm_before = gemini_svc.build_llm.call_count
+
         with self._patch_judge_response(mock_gemini_client_global):
             resp = client.post(
                 "/api/v1/agents/consensus",
@@ -615,6 +620,19 @@ class TestConsensusEndpoint:
                 headers=auth_headers,
             )
         assert resp.status_code == 200
+
+        # Workers run via gemini_service → build_llm(model).invoke().
+        # Verify the 2 workers each called build_llm with the worker model.
+        worker_calls = gemini_svc.build_llm.call_args_list[build_llm_before:]
+        assert len(worker_calls) == 2
+        for call in worker_calls:
+            assert call[0][0] == "gemini-2.5-flash", f"worker model mismatch: {call[0]}"
+
+        # Judge runs via structured_service → client.models.generate_content(model=judge_model).
+        # The mock is replaced by _patch_judge_response during the call, so verify via response.
+        data = resp.json()["data"]
+        assert data["consensus_reached"] is True
+        assert "Explain the CAP theorem" not in data["answer"]
 
     def test_consensus_rejects_empty_prompt(self, client: TestClient, auth_headers):
         resp = client.post(

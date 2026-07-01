@@ -1,28 +1,60 @@
-# Gemini Playground 🤖🚀
+# Gemini Playground
 
 *"Gemini, by someone who reads the Gemini docs religiously."*
 
 The **Gemini Playground** is a production-quality reference implementation of a Gemini-native AI platform. Built with FastAPI and LangGraph, it functions as a **simulation**: *what would a Google developer working on Gemini capabilities ship?*
 
-This project demonstrates hands-on expertise in LLM platform engineering, specifically focusing on the unique, high-impact capabilities of the Google Gemini ecosystem.
+A companion React SPA frontend (`playground-ui/`) provides a polished Google-design-language interface for every feature.
 
 ---
 
-## 🌟 Gemini-Native Features
+## Purpose
 
-Unlike generic multi-provider wrappers, this playground leans deep into Gemini-distinctive capabilities:
+This project demonstrates hands-on expertise in LLM platform engineering, focusing on Gemini-distinctive capabilities rather than multi-provider parity. Every feature passes the filter: *"Would the Gemini team actually ship this?"*
 
-*   **Live API (Real-time Voice/Video):** Bidirectional WebSocket sessions for low-latency multimodal interaction.
-*   **Multimodal Files API:** Native support for image, audio, video, and PDF grounding in a single request.
-*   **Native Tools:** Grounded Google Search with citations, and sandboxed code execution.
-*   **Imagen Generation:** High-quality text-to-image generation integrated directly into the API surface.
-*   **FastMCP Server:** Every registered tool is automatically exposed to external MCP clients (Claude Desktop, Cursor).
+The platform is:
+- A learning sandbox for exploring LLM infrastructure
+- A portfolio piece demonstrating production-quality code
+- A Gemini-native reference — no Claude/GPT mimicry
+
+It is **not** a SaaS, an open-source library, or a multi-provider playground.
 
 ---
 
-## 🏗️ Architecture
+## Features
 
-The platform is designed to be **GCP-native** and **stateless**, scaling seamlessly on Cloud Run.
+### Core Gemini
+- **Text Generation** — Streaming and non-streaming, with native search grounding, code execution, and URL context tools
+- **Structured Output** — Schema-constrained JSON responses via Pydantic models
+- **ReAct Agents** — LangGraph-powered agents with tool calling: Coder, Research, Analyst, Knowledge presets
+- **Conversation Threads** — Persistent conversation history with LangGraph checkpointer
+
+### Multimodal
+- **Files API** — Upload and query images, audio, video, and PDFs in a single call
+- **Live API** — Real-time bidirectional WebSocket voice/video sessions
+- **Imagen** — Text-to-image generation and image editing
+
+### Knowledge & Search
+- **RAG Pipeline** — Gemini embeddings + Pinecone vector store, exposed as the `search_knowledge_base` tool
+- **Native Search Grounding** — Gemini-grounded Google Search with citations
+
+### Developer Tools
+- **MCP Server** — Every registered tool auto-exposed at `/mcp/sse` for external clients (Claude Desktop, Cursor)
+- **MCP Client** — Consume external MCP servers as agent tools
+- **Evals Harness** — Gemini-as-judge grading with dataset management and run history
+- **Context Caching** — Cache large contexts for repeated queries, with TTL management
+- **API Keys** — Generate, list, and revoke API keys via `/api/v1/auth`
+
+### Multi-Agent Orchestration
+- **A2A Discovery** — Agent Cards at `/.well-known/agent.json` for peer discovery
+- **Live API Swarm** — Interrupt injection into running agents via WebSocket
+- **Consensus Engine** — Parallel Flash ensemble + Pro judge synthesis
+
+---
+
+## Architecture
+
+The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Run.
 
 ```
                        ┌──────────────────────────────────────────────────────────┐
@@ -30,33 +62,46 @@ The platform is designed to be **GCP-native** and **stateless**, scaling seamles
                        │          (Scales to zero = $0 idle cost)                 │
                        │                                                          │
   Client               │  /api/v1/                                                │
-  (SDK / UI)  ────────▶│    auth/          → API key management                  │
-                       │    agents/        → single-agent (Gemini)                │
+  (React SPA) ────────▶│    auth/          → API key management                  │
+                       │    agents/        → ReAct agents (Gemini)                │
                        │    threads/       → conversation history                 │
+                       │    rag/           → ingest + query (Pinecone)            │
                        │    files/         → multimodal uploads (Files API)       │
-                       │    live/          → real-time voice/video (WebSocket)    │
-                       │    evals/         → dataset + grader runs                │
-                       │  /mcp/sse         → FastMCP server (all tools exposed)   │
+                       │    gemini/        → text + streaming + structured        │
+                       │    imagen/        → generation + edit                    │
+                       │    caches/        → context caching                      │
+                       │    evals/         → datasets + grader runs               │
+                       │    mcp-servers/   → external MCP server management       │
+                       │    health/        → dependency status                    │
+                       │  /api/v1/live/ws  → real-time voice/video (WebSocket)    │
                        │                                                          │
+  MCP Clients          │  /mcp/sse         → FastMCP server (all tools exposed)   │
+  (Claude/Cursor) ────▶│                                                          │
                        └────────┬─────────────────────────────────────────────────┘
                                 │  ADC (service account — no API keys in prod)
           ┌─────────────────────┼─────────────────────────────────────────────┐
           │                     │                                             │
           ▼                     ▼                                             ▼
-   PostgresDB (Neon)       Gemini / Vertex AI                       Cloud Operations
-   + VectorDB (Pinecone)   - Gemini Flash 2.x (primary)             Cloud Logging
-                           - Imagen 4.0 (generation)                Cloud Trace
-                           - Native search grounding                Secret Manager
+   Neon DB (Postgres)      Gemini / Vertex AI                        Cloud Operations
+   Pinecone (Vectors)       - Gemini Flash 2.x (primary)             Cloud Logging ($0)
+                            - Gemini Pro (complex tasks)             Cloud Trace ($0)
+                            - Gemini Embedding 001                   Secret Manager ($0)
+                            - Imagen 4.0 (generation)
+                            - Live API (real-time)
+                            - Native search grounding
 ```
 
 ---
 
-## 🛠️ Stack
+## Tech Stack
 
-*   **Backend:** FastAPI (Python 3.11)
-*   **Orchestration:** LangGraph + LangChain
-*   **SDK:** `google-genai` (Official Google Gemini SDK)
-*   **Database:** SQLAlchemy + Postgres (Neon)
-*   **Vector Store:** Pinecone
-*   **Infrastructure:** GCP (Cloud Run, Secret Manager, Cloud Trace, Cloud Logging)
-*   **Tools:** FastMCP (MCP Server)
+- **FastAPI** (Python 3.11) — async REST API with OpenAPI docs
+- **LangGraph** + **LangChain** — agent orchestration with checkpointed memory
+- **google-genai** — official Gemini SDK (Live API, Imagen, Files, native tools)
+- **SQLAlchemy** + **Postgres** (Neon, free tier) — relational data with `playground_v1_` prefix convention
+- **Pinecone** (free tier) — vector store for RAG
+- **FastMCP** — MCP server at `/mcp/sse` exposing all registered tools
+- **ADC** — Cloud Run service account auth (no API keys in prod)
+- **Redis** — rate limiting (proxied via limiter)
+- **GCP** — Cloud Run, Secret Manager, Cloud Trace, Cloud Logging, Artifact Registry
+- **GitHub Actions** — CI (pytest + ruff + mypy), CD (Cloud Build deploy)

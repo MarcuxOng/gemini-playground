@@ -104,11 +104,12 @@ async def _run_worker(
     perspective: str,
     model: str,
     fastapi_request: Any = None,
+    cache_id: str | None = None,
 ) -> dict[str, str]:
     """Run a single perspective worker offloading the sync call to a thread."""
     worker_prompt = _WORKER_SYSTEM_PROMPT.format(perspective=perspective, prompt=prompt)
     response = await run_in_threadpool(
-        gemini_service, model, worker_prompt, None, None, None, None, None, fastapi_request
+        gemini_service, model, worker_prompt, None, None, None, None, cache_id, fastapi_request
     )
     return {"perspective": perspective, "response": str(response)}
 
@@ -128,6 +129,7 @@ async def run_consensus(
     judge_model: str = eval_model,
     max_output_tokens: int = eval_max_tokens,
     fastapi_request: Any = None,
+    cache_id: str | None = None,
 ) -> ConsensusResult:
     """Run the parallel reasoning engine.
 
@@ -138,11 +140,13 @@ async def run_consensus(
         judge_model: Gemini model for the synthesis judge (should be a Pro variant).
         max_output_tokens: Max tokens for the judge synthesis (default from eval_max_output_tokens).
         fastapi_request: Optional FastAPI Request for token tracking on request.state.
+        cache_id: Optional Gemini context cache to share across all workers and judge.
 
     Returns:
         ConsensusResult with the synthesised answer and per-perspective outputs.
     """
-    perspectives = perspectives or DEFAULT_PERSPECTIVES
+    if perspectives is None:
+        perspectives = DEFAULT_PERSPECTIVES
     if not perspectives:
         raise ValueError("At least one perspective is required")
 
@@ -154,7 +158,7 @@ async def run_consensus(
         judge_model,
     )
 
-    worker_tasks = [_run_worker(prompt, p, model, fastapi_request) for p in perspectives]
+    worker_tasks = [_run_worker(prompt, p, model, fastapi_request, cache_id) for p in perspectives]
     gathered = await asyncio.gather(*worker_tasks, return_exceptions=True)
 
     results: list[dict[str, str]] = []
@@ -163,7 +167,6 @@ async def run_consensus(
         if isinstance(item, Exception):
             logger.warning("Worker '%s' failed: %s", perspectives[i], item)
             failed += 1
-            results.append({"perspective": perspectives[i], "response": f"[ERROR] {item}"})
         else:
             results.append(item)  # type: ignore[arg-type]
 
@@ -185,6 +188,7 @@ async def run_consensus(
             _JUDGE_SCHEMA,
             fastapi_request,
             max_output_tokens,
+            cache_id,
         )
     except Exception as exc:
         logger.error("Consensus judge failed: %s", exc)

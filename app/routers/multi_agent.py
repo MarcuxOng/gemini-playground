@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import logging
+import socket
 from typing import Any
 from urllib.parse import urlparse
 
@@ -36,6 +37,15 @@ router = APIRouter(
     tags=["Multi-Agent"],
 )
 
+_SSRF_DENYLIST: set[str] = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+    "metadata.google.internal",
+    "169.254.169.254",
+}
+
 
 class InvokeRequest(BaseModel):
     """Request body for the inter-agent invoke endpoint.
@@ -54,6 +64,69 @@ class InvokeRequest(BaseModel):
         if bool(self.target_preset) == bool(self.target_agent_id):
             raise ValueError("Exactly one of 'target_preset' or 'target_agent_id' is required.")
         return self
+
+
+class A2ARouteRequest(BaseModel):
+    """Request body for the A2A routing endpoint."""
+
+    task: str = Field(..., min_length=1, max_length=32_000)
+    peer_urls: list[str] = Field(default_factory=list, max_length=20)
+    model: ModelName = default_model
+    shared_cache_id: str | None = Field(default=None, max_length=256)
+
+
+class ConsensusRequest(BaseModel):
+    """Request body for the parallel reasoning consensus endpoint."""
+
+    prompt: str = Field(..., min_length=1, max_length=32_000)
+    model: ModelName = default_model
+    judge_model: ModelName = eval_model
+    perspectives: list[str] | None = None
+    max_output_tokens: int = Field(eval_max_tokens, ge=1, le=65_536)
+    shared_cache_id: str | None = Field(default=None, max_length=256)
+
+
+def _validate_peer_url(raw: str) -> None:
+    """Reject peer URLs targeting internal or private addresses (SSRF guard)."""
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail=f"Unsupported scheme in peer URL: {raw}")
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise HTTPException(status_code=400, detail=f"Invalid peer URL (no hostname): {raw}")
+    if hostname in _SSRF_DENYLIST:
+        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        addr = None
+
+    addresses_to_check: list[str] = []
+    if addr is not None:
+        addresses_to_check = [hostname]
+    else:
+        try:
+            resolved = socket.getaddrinfo(hostname, None)
+            addresses_to_check = [r[4][0] for r in resolved]
+        except socket.gaierror as err:
+            raise HTTPException(
+                status_code=400, detail=f"Peer URL hostname cannot be resolved: {raw}"
+            ) from err
+
+    for ip_str in addresses_to_check:
+        if ip_str in _SSRF_DENYLIST:
+            raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
+        try:
+            ip_addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if (
+            ip_addr.is_loopback
+            or ip_addr.is_link_local
+            or ip_addr.is_private
+            or ip_addr.is_unspecified
+        ):
+            raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
 
 
 @router.post("/invoke", response_model=APIResponse[AgentRunResponse])
@@ -155,44 +228,6 @@ async def agent_invoke(
         raise HTTPException(status_code=500, detail="Agent invocation failed.") from e
 
 
-# ── A2A Discovery Mesh (8.7) ────────────────────────────────────────────────────
-
-_SSRF_DENYLIST: set[str] = {
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",
-    "::1",
-    "metadata.google.internal",
-    "169.254.169.254",
-}
-
-
-def _validate_peer_url(raw: str) -> None:
-    """Reject peer URLs targeting internal or private addresses (SSRF guard)."""
-    parsed = urlparse(raw)
-    if parsed.scheme not in ("http", "https"):
-        raise HTTPException(status_code=400, detail=f"Unsupported scheme in peer URL: {raw}")
-    hostname = (parsed.hostname or "").lower()
-    if not hostname:
-        raise HTTPException(status_code=400, detail=f"Invalid peer URL (no hostname): {raw}")
-    if hostname in _SSRF_DENYLIST:
-        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
-    try:
-        addr = ipaddress.ip_address(hostname)
-    except ValueError:
-        return
-    if addr.is_loopback or addr.is_link_local or addr.is_private:
-        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
-
-
-class A2ARouteRequest(BaseModel):
-    """Request body for the A2A routing endpoint."""
-
-    task: str = Field(..., min_length=1, max_length=32_000)
-    peer_urls: list[str] = Field(default_factory=list, max_length=20)
-    model: ModelName = default_model
-
-
 @router.post("/a2a/route", response_model=APIResponse)
 @limiter.limit("30/minute")
 async def a2a_route(
@@ -218,7 +253,9 @@ async def a2a_route(
         discovered = await router.discover(body.peer_urls)
 
     try:
-        selected_url, selected_card = await router.route(body.task, model=str(body.model))
+        selected_url, selected_card = await router.route(
+            body.task, model=str(body.model), cache_id=body.shared_cache_id
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -234,25 +271,11 @@ async def a2a_route(
     )
 
 
-# ── Parallel Reasoning Engine (8.8) ──────────────────────────────────────────────
-
-
-class ConsensusRequest(BaseModel):
-    """Request body for the parallel reasoning consensus endpoint."""
-
-    prompt: str = Field(..., min_length=1, max_length=32_000)
-    model: ModelName = default_model
-    judge_model: ModelName = eval_model
-    perspectives: list[str] | None = None
-    max_output_tokens: int = Field(eval_max_tokens, ge=1, le=65_536)
-
-
-@router.post("/consensus", response_model=APIResponse)
+@router.post("/consensus", response_model=APIResponse, dependencies=[Depends(verify_api_key)])
 @limiter.limit("10/minute")
 async def agent_consensus(
     request: Request,
     body: ConsensusRequest,
-    api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     """Run the parallel reasoning engine.
 
@@ -269,6 +292,7 @@ async def agent_consensus(
             judge_model=str(body.judge_model),
             max_output_tokens=body.max_output_tokens,
             fastapi_request=request,
+            cache_id=body.shared_cache_id,
         )
         return APIResponse(data=result.to_dict())
 

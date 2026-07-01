@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.database.db import get_db
 from app.database.models import APIKey
-from app.utils.auth import hash_api_key, verify_master_key
+from app.utils.auth import hash_api_key, verify_clerk_token, verify_master_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
 
@@ -26,6 +26,10 @@ class APIKeyResponse(BaseModel):
     revoked_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class GenerateClerkKeyRequest(BaseModel):
+    clerk_user_id: str
 
 
 @router.post("/keys/generate", response_model=APIResponse)
@@ -86,3 +90,73 @@ async def revoke_key(
 
     logger.info(f"Revoked API key ID: {key_id}")
     return APIResponse(data={"message": f"Successfully revoked key: {api_key_record.name}"})
+
+
+@router.post("/clerk/keys/generate", response_model=APIResponse)
+@limiter.limit("10/minute")
+async def generate_key_for_clerk_user(
+    request: Request,
+    body: GenerateClerkKeyRequest,
+    db: Session = Depends(get_db),
+    clerk_claims: dict = Depends(verify_clerk_token),
+) -> APIResponse:  # type: ignore[type-arg]
+    """Generate or retrieve an API key for a Clerk-authenticated user.
+
+    On first call, creates a new key and links it to the Clerk user.
+    On subsequent calls, returns the existing key info (never the raw key again).
+    """
+    # Verify the Clerk JWT sub matches the requested user_id
+    if clerk_claims.get("sub") != body.clerk_user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Clerk user_id does not match the authenticated session.",
+        )
+
+    # Check if user already has a key
+    existing = (
+        db.query(APIKey)
+        .filter(
+            APIKey.clerk_user_id == body.clerk_user_id,
+            APIKey.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if existing:
+        return APIResponse(
+            data={
+                "id": existing.id,
+                "name": existing.name,
+                "is_active": existing.is_active,
+                "created_at": existing.created_at.isoformat(),
+                "existing": True,
+            }
+        )
+
+    # Generate new key
+    raw_key = f"sk_play_{secrets.token_urlsafe(32)}"
+    hashed_key = hash_api_key(raw_key)
+
+    new_key = APIKey(
+        name=f"clerk-{body.clerk_user_id[:8]}",
+        hashed_key=hashed_key,
+        is_active=True,
+        clerk_user_id=body.clerk_user_id,
+    )
+
+    db.add(new_key)
+    db.commit()
+    db.refresh(new_key)
+
+    logger.info(f"Generated API key for Clerk user: {body.clerk_user_id[:8]}...")
+    return APIResponse(
+        data={
+            "id": new_key.id,
+            "name": new_key.name,
+            "api_key": raw_key,
+            "is_active": new_key.is_active,
+            "created_at": new_key.created_at.isoformat(),
+            "existing": False,
+            "note": "Save this key — it cannot be recovered later.",
+        }
+    )

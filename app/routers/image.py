@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from app.services.imagen import edit_image_service, generate_image_service
+from app.config import settings
+from app.services.image import edit_image_service, generate_image_service
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.mime import validate_upload
@@ -15,12 +16,12 @@ from app.utils.response import APIResponse
 from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/imagen", tags=["Imagen"], dependencies=[Depends(verify_api_key)])
+router = APIRouter(prefix="/api/v1/image", tags=["Image"], dependencies=[Depends(verify_api_key)])
 
 
 class ImageGenerationRequest(BaseRequestModel):
     prompt: str
-    model: ModelName = "imagen-4.0-generate-001"
+    model: ModelName = settings.gemini_image_model
 
 
 class ImageResponse(BaseModel):
@@ -50,7 +51,7 @@ async def edit_image(
     request: Request,
     prompt: str,
     file: UploadFile = File(...),
-    model: ModelName = "imagen-4.0-generate-001",
+    model: ModelName = settings.gemini_image_model,
 ) -> APIResponse[ImageResponse]:
     """Edit an image based on a text prompt."""
     try:
