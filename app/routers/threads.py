@@ -57,7 +57,12 @@ async def get_thread_messages(
         raise HTTPException(404, "Thread not found.")
     return APIResponse(
         data=[
-            {"id": m.id, "role": m.role, "content": m.content, "created_at": m.created_at.isoformat() if m.created_at else None}
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
             for m in thread.messages
         ]
     )
