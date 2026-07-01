@@ -18,26 +18,26 @@ def test_get_thread_messages_returns_404_for_invalid_id(client: TestClient, auth
 
 
 def test_threads_requires_auth(client: TestClient):
-    """Thread endpoints protected by verify_master_key return 422 when no key is provided."""
-    assert client.get("/api/v1/threads/").status_code == 422
-    assert client.get("/api/v1/threads/some-id/messages").status_code == 422
-    assert client.delete("/api/v1/threads/some-id").status_code == 422
+    """Thread endpoints require authentication return 401 when no key is provided."""
+    assert client.get("/api/v1/threads/").status_code == 401
+    assert client.get("/api/v1/threads/some-id/messages").status_code == 401
+    assert client.delete("/api/v1/threads/some-id").status_code == 401
 
 
 def test_threads_forbidden_with_non_master_api_key(
     client: TestClient, auth_headers_non_master
 ):
-    """Thread endpoints protected by verify_master_key return 403 for a non-master key."""
-    assert client.get("/api/v1/threads/", headers=auth_headers_non_master).status_code == 403
+    """Thread endpoints return 401 for unrecognised API keys."""
+    assert client.get("/api/v1/threads/", headers=auth_headers_non_master).status_code == 401
     assert (
         client.get(
             "/api/v1/threads/some-id/messages", headers=auth_headers_non_master
         ).status_code
-        == 403
+        == 401
     )
     assert (
         client.delete("/api/v1/threads/some-id", headers=auth_headers_non_master).status_code
-        == 403
+        == 401
     )
 
 
