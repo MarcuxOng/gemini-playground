@@ -56,7 +56,7 @@ It is **not** a SaaS, an open-source library, or a multi-provider playground.
 
 The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Run.
 
-```
+```text
                        ┌──────────────────────────────────────────────────────────┐
                        │              Cloud Run — ai-platform                     │
                        │          (Scales to zero = $0 idle cost)                 │
@@ -68,7 +68,7 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
                        │    rag/           → ingest + query (Pinecone)            │
                        │    files/         → multimodal uploads (Files API)       │
                        │    gemini/        → text + streaming + structured        │
-                       │    imagen/        → generation + edit                    │
+                       │    image/         → generation + edit                    │
                        │    caches/        → context caching                      │
                        │    evals/         → datasets + grader runs               │
                        │    mcp-servers/   → external MCP server management       │
