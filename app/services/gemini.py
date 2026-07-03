@@ -20,6 +20,7 @@ from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
 
 logger = logging.getLogger(__name__)
 client = build_genai_client()
+_token_lock_guard = threading.Lock()
 
 # Keep in sync with _SAFETY_SETTINGS dict in app/services/llm.py — update both when changing thresholds or categories so raw client and LangChain paths stay consistent.
 SAFETY_SETTINGS = [
@@ -299,8 +300,11 @@ def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
     try:
         lock = getattr(fastapi_request.state, "_token_lock", None)
         if lock is None:
-            lock = threading.Lock()
-            fastapi_request.state._token_lock = lock
+            with _token_lock_guard:
+                lock = getattr(fastapi_request.state, "_token_lock", None)
+                if lock is None:
+                    lock = threading.Lock()
+                    fastapi_request.state._token_lock = lock
 
         if hasattr(usage_metadata, "prompt_token_count"):
             inp = int(getattr(usage_metadata, "prompt_token_count", 0) or 0)
