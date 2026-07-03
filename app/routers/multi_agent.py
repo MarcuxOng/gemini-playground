@@ -7,9 +7,7 @@ for server-to-server communication, or the standard API key for public endpoints
 from __future__ import annotations
 
 import base64
-import ipaddress
 import logging
-import socket
 from typing import Any
 from urllib.parse import urlparse
 
@@ -21,7 +19,7 @@ from app.agents import PRESETS
 from app.config import default_model, eval_max_tokens, eval_model
 from app.database.db import get_db
 from app.database.models import APIKey
-from app.multi_agent.a2a import A2ARouter, build_agent_card
+from app.multi_agent.a2a import A2ARouter, _check_peer_hostname, build_agent_card
 from app.multi_agent.consensus import run_consensus
 from app.multi_agent.protocol import AgentMessage, agent_message_to_gemini_parts
 from app.services.agents import AgentRunResponse, run_agent_service
@@ -36,15 +34,6 @@ router = APIRouter(
     prefix="/api/v1/agents",
     tags=["Multi-Agent"],
 )
-
-_SSRF_DENYLIST: set[str] = {
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",
-    "::1",
-    "metadata.google.internal",
-    "169.254.169.254",
-}
 
 
 class InvokeRequest(BaseModel):
@@ -91,42 +80,13 @@ def _validate_peer_url(raw: str) -> None:
     parsed = urlparse(raw)
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail=f"Unsupported scheme in peer URL: {raw}")
-    hostname = (parsed.hostname or "").lower()
+    hostname = parsed.hostname
     if not hostname:
         raise HTTPException(status_code=400, detail=f"Invalid peer URL (no hostname): {raw}")
-    if hostname in _SSRF_DENYLIST:
-        raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
     try:
-        addr = ipaddress.ip_address(hostname)
-    except ValueError:
-        addr = None
-
-    addresses_to_check: list[str] = []
-    if addr is not None:
-        addresses_to_check = [hostname]
-    else:
-        try:
-            resolved = socket.getaddrinfo(hostname, None)
-            addresses_to_check = [r[4][0] for r in resolved]
-        except socket.gaierror as err:
-            raise HTTPException(
-                status_code=400, detail=f"Peer URL hostname cannot be resolved: {raw}"
-            ) from err
-
-    for ip_str in addresses_to_check:
-        if ip_str in _SSRF_DENYLIST:
-            raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
-        try:
-            ip_addr = ipaddress.ip_address(ip_str)
-        except ValueError:
-            continue
-        if (
-            ip_addr.is_loopback
-            or ip_addr.is_link_local
-            or ip_addr.is_private
-            or ip_addr.is_unspecified
-        ):
-            raise HTTPException(status_code=400, detail=f"Peer URL targets a denied host: {raw}")
+        _check_peer_hostname(hostname)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/invoke", response_model=APIResponse[AgentRunResponse])
