@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     # GCP Infrastructure
     gcp_project_id: str
-    gcp_region: str = "asia-southeast1"
+    gcp_region: str = "us-central1"
     gcs_bucket: str | None = None
     gcp_service_account_email: str | None = None
 
