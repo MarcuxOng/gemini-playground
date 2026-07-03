@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # Preset Gemini Models
     gemini_default_model: str = "gemini-2.5-flash"
-    gemini_eval_model: str = "gemini-3.1-pro-preview"
+    gemini_eval_model: str = "gemini-2.5-pro"
     gemini_image_model: str = "gemini-2.5-flash-image"
     gemini_embedding_model: str = "gemini-embedding-2"
 
