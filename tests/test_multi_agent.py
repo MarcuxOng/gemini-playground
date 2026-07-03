@@ -466,7 +466,10 @@ class TestA2ARouter:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("app.multi_agent.a2a.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("app.multi_agent.a2a.httpx.AsyncClient", return_value=mock_client),
+            patch("app.multi_agent.a2a._check_peer_hostname", return_value=None),
+        ):
             router = A2ARouter()
             discovered = await router.discover(["https://peer1.example.com"])
             assert discovered == ["https://peer1.example.com"]
