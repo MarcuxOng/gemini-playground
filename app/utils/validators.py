@@ -5,7 +5,6 @@ from pydantic import AfterValidator
 
 _ALLOWED_MODEL_PREFIXES = (
     "gemini-",
-    "imagen-",
     "veo-",
     "text-embedding-",
     "antigravity-",
