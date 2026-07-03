@@ -297,6 +297,9 @@ class A2ARouter:
                 "No agents available for routing. Provide a host_card or discover peers."
             )
 
+        if len(candidates) == 1:
+            return candidates[0]
+
         # Assign a unique index to each candidate for unambiguous resolution
         index_map: dict[int, tuple[str, AgentCard]] = {}
         entries: list[str] = []
