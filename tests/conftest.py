@@ -44,6 +44,7 @@ def mock_gemini_client_global():
 
     with (
         patch("app.services.gemini.client", mock_client),
+        patch("app.services.image.client", mock_client),
         patch("app.services.caches.client", mock_client),
         patch("app.services.gemini.build_llm", return_value=mock_llm_instance),
         patch("app.agents.base.build_llm", return_value=mock_llm_instance),
