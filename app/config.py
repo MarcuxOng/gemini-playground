@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # Clerk auth
     clerk_secret_key: str | None = None
     clerk_publishable_key: str | None = None
+    clerk_issuer: str | None = None
 
     # Internal agent-to-agent protocol key (x-internal-key header)
     internal_api_key: str
@@ -82,6 +83,7 @@ class Settings(BaseSettings):
                     "pinecone_api_key",
                     "database_url",
                     "internal_api_key",
+                    "clerk_secret_key",
                 ]:
                     secret = get_secret(field.upper())
                     if secret:
