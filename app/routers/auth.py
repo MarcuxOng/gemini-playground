@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
@@ -85,6 +86,7 @@ async def revoke_key(
         raise HTTPException(status_code=404, detail="API Key not found.")
 
     api_key_record.is_active = False  # type: ignore[assignment]
+    api_key_record.clerk_user_id = None  # type: ignore[assignment]
     api_key_record.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
     db.commit()
 
@@ -145,7 +147,32 @@ async def generate_key_for_clerk_user(
     )
 
     db.add(new_key)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as err:
+        db.rollback()
+        existing = (
+            db.query(APIKey)
+            .filter(
+                APIKey.clerk_user_id == body.clerk_user_id,
+                APIKey.is_active.is_(True),
+            )
+            .first()
+        )
+        if existing:
+            return APIResponse(
+                data={
+                    "id": existing.id,
+                    "name": existing.name,
+                    "is_active": existing.is_active,
+                    "created_at": existing.created_at.isoformat(),
+                    "existing": True,
+                }
+            )
+        raise HTTPException(
+            status_code=409,
+            detail="Could not create API key due to a conflict. Please try again.",
+        ) from err
     db.refresh(new_key)
 
     logger.info(f"Generated API key for Clerk user: {body.clerk_user_id[:8]}...")

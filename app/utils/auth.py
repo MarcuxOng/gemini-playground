@@ -126,6 +126,12 @@ async def verify_clerk_token(
             detail="Clerk auth is not configured.",
         )
 
+    if not settings.clerk_issuer:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Clerk issuer is not configured.",
+        )
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(
@@ -135,18 +141,7 @@ async def verify_clerk_token(
 
     token = auth_header.removeprefix("Bearer ")
 
-    try:
-        unverified = jwt.decode(token, options={"verify_signature": False})
-        iss: str = unverified.get("iss", "")
-    except jwt.InvalidTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token."
-        ) from None
-
-    if not iss:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has no issuer.")
-
-    jwks_url = f"{iss}/.well-known/jwks.json"
+    jwks_url = f"{settings.clerk_issuer}/.well-known/jwks.json"
     jwks_client = jwt.PyJWKClient(jwks_url)
 
     try:
@@ -155,6 +150,7 @@ async def verify_clerk_token(
             token,
             signing_key.key,
             algorithms=["RS256"],
+            issuer=settings.clerk_issuer,
             options={"verify_exp": True, "verify_aud": False},
         )
         return payload
