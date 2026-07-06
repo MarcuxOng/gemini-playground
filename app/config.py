@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # Clerk auth
     clerk_secret_key: str | None = None
     clerk_publishable_key: str | None = None
+    clerk_issuer: str | None = None
 
     # Internal agent-to-agent protocol key (x-internal-key header)
     internal_api_key: str
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
 
     # Preset Gemini Models
     gemini_default_model: str = "gemini-2.5-flash"
-    gemini_eval_model: str = "gemini-3.1-pro-preview"
+    gemini_eval_model: str = "gemini-2.5-pro"
     gemini_image_model: str = "gemini-2.5-flash-image"
     gemini_embedding_model: str = "gemini-embedding-2"
 
@@ -72,11 +73,6 @@ class Settings(BaseSettings):
         if os.getenv("ENV") == "production" and self.gemini_embedding_model == "gemini-embedding-2":
             self.gemini_embedding_model = "multimodalembedding"
 
-        # Env-aware image model: Vertex AI prod does not expose gemini-2.5-flash-image
-        # (Nano Banana); fall back to Imagen. Gemini API dev uses Nano Banana directly.
-        if os.getenv("ENV") == "production" and self.gemini_image_model == "gemini-2.5-flash-image":
-            self.gemini_image_model = "imagen-4.0-generate-001"
-
         # Attempt to fetch secrets from Secret Manager if running in production (indicated by env)
         if os.getenv("ENV") == "production":
             for field in Settings.model_fields:
@@ -87,6 +83,7 @@ class Settings(BaseSettings):
                     "pinecone_api_key",
                     "database_url",
                     "internal_api_key",
+                    "clerk_secret_key",
                 ]:
                     secret = get_secret(field.upper())
                     if secret:

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
-from app.database.models import APIKey, Thread
+from app.database.models import APIKey, Thread, ThreadMessage
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
@@ -21,10 +22,22 @@ async def list_threads(
     db: Session = Depends(get_db),
     api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
-    query = db.query(Thread).order_by(Thread.updated_at.desc())
+    msg_count_subq = (
+        db.query(
+            ThreadMessage.thread_id,
+            func.count(ThreadMessage.id).label("count"),
+        )
+        .group_by(ThreadMessage.thread_id)
+        .subquery()
+    )
+    query = (
+        db.query(Thread, func.coalesce(msg_count_subq.c.count, 0).label("message_count"))
+        .outerjoin(msg_count_subq, Thread.id == msg_count_subq.c.thread_id)
+        .order_by(Thread.updated_at.desc())
+    )
     if api_key.id != "master":
         query = query.filter(Thread.owner_id == api_key.id)
-    threads = query.all()
+    rows = query.all()
     return APIResponse(
         data=[
             {
@@ -34,9 +47,9 @@ async def list_threads(
                 "model": t.model,
                 "created_at": t.created_at,
                 "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-                "message_count": len(t.messages) if t.messages else 0,
+                "message_count": msg_count,
             }
-            for t in threads
+            for t, msg_count in rows
         ]
     )
 

@@ -32,7 +32,7 @@ It is **not** a SaaS, an open-source library, or a multi-provider playground.
 ### Multimodal
 - **Files API** — Upload and query images, audio, video, and PDFs in a single call
 - **Live API** — Real-time bidirectional WebSocket voice/video sessions
-- **Imagen** — Text-to-image generation and image editing
+- **Image** — Text-to-image generation and image editing
 
 ### Knowledge & Search
 - **RAG Pipeline** — Gemini embeddings + Pinecone vector store, exposed as the `search_knowledge_base` tool
@@ -86,7 +86,7 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
    Pinecone (Vectors)       - Gemini Flash 2.x (primary)             Cloud Logging ($0)
                             - Gemini Pro (complex tasks)             Cloud Trace ($0)
                             - Gemini Embedding 001                   Secret Manager ($0)
-                            - Imagen 4.0 (generation)
+                             - Gemini 2.5 Flash Image (image gen)
                             - Live API (real-time)
                             - Native search grounding
 ```
@@ -97,7 +97,7 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
 
 - **FastAPI** (Python 3.11) — async REST API with OpenAPI docs
 - **LangGraph** + **LangChain** — agent orchestration with checkpointed memory
-- **google-genai** — official Gemini SDK (Live API, Imagen, Files, native tools)
+- **google-genai** — official Gemini SDK (Live API, Image gen, Files, native tools)
 - **SQLAlchemy** + **Postgres** (Neon, free tier) — relational data with `playground_v1_` prefix convention
 - **Pinecone** (free tier) — vector store for RAG
 - **FastMCP** — MCP server at `/mcp/sse` exposing all registered tools

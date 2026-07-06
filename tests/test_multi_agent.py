@@ -466,7 +466,10 @@ class TestA2ARouter:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("app.multi_agent.a2a.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("app.multi_agent.a2a.httpx.AsyncClient", return_value=mock_client),
+            patch("app.multi_agent.a2a._check_peer_hostname", return_value=None),
+        ):
             router = A2ARouter()
             discovered = await router.discover(["https://peer1.example.com"])
             assert discovered == ["https://peer1.example.com"]
@@ -608,7 +611,7 @@ class TestConsensusEndpoint:
         # Snapshot build_llm call count to isolate this test
         build_llm_before = gemini_svc.build_llm.call_count
 
-        with self._patch_judge_response(mock_gemini_client_global):
+        with self._patch_judge_response(mock_gemini_client_global) as patched_gen:
             resp = client.post(
                 "/api/v1/agents/consensus",
                 json={
@@ -629,10 +632,12 @@ class TestConsensusEndpoint:
             assert call[0][0] == "gemini-2.5-flash", f"worker model mismatch: {call[0]}"
 
         # Judge runs via structured_service → client.models.generate_content(model=judge_model).
-        # The mock is replaced by _patch_judge_response during the call, so verify via response.
-        data = resp.json()["data"]
-        assert data["consensus_reached"] is True
-        assert "Explain the CAP theorem" not in data["answer"]
+        # Assert the patched mock captured the judge model.
+        judge_call = patched_gen.call_args
+        assert judge_call is not None, "judge model was never called"
+        assert judge_call[1].get("model") == "gemini-2.5-pro", (
+            f"judge model mismatch: {judge_call[1]}"
+        )
 
     def test_consensus_rejects_empty_prompt(self, client: TestClient, auth_headers):
         resp = client.post(

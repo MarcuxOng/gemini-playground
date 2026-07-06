@@ -11,7 +11,9 @@ Reference: Google A2A Protocol
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import socket
 from typing import Any
 
 import httpx
@@ -23,6 +25,15 @@ from app.services.llm import build_llm
 from app.tools import list_tool_names
 
 logger = logging.getLogger(__name__)
+
+_SSRF_DENYLIST: set[str] = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+    "metadata.google.internal",
+    "169.254.169.254",
+}
 
 # ── Preset metadata ────────────────────────────────────────────────────────────
 # Descriptions and tool lists mirror the preset modules under app/agents/presets/.
@@ -115,7 +126,7 @@ def build_agent_card(base_url: str, default_model: str = default_model) -> Agent
         description=(
             "A self-hosted AI/LLM platform exposing Gemini through a clean API surface "
             "with ReAct agents, RAG over Pinecone, multimodal Files API, Live API, "
-            "Imagen generation, and an MCP server."
+            "image generation, and an MCP server."
         ),
         url=url,
         capabilities=capabilities,
@@ -137,6 +148,44 @@ AGENTS:
 {agent_list}
 
 Respond with ONLY the numeric agent ID in brackets, e.g. [2]. No explanation, no punctuation."""
+
+
+def _check_peer_hostname(hostname: str) -> None:
+    """Resolve *hostname* and reject it if any resolved address is private,
+    link-local, loopback, or on the SSRF denylist."""
+    hostname_lower = hostname.lower()
+    if hostname_lower in _SSRF_DENYLIST:
+        raise ValueError(f"Peer hostname targets a denied host: {hostname}")
+
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        addr = None
+
+    addresses_to_check: list[str] = []
+    if addr is not None:
+        addresses_to_check = [hostname]
+    else:
+        try:
+            resolved = socket.getaddrinfo(hostname, None)
+            addresses_to_check = [r[4][0] for r in resolved]
+        except socket.gaierror as err:
+            raise ValueError(f"Peer hostname cannot be resolved: {hostname}") from err
+
+    for ip_str in addresses_to_check:
+        if ip_str in _SSRF_DENYLIST:
+            raise ValueError(f"Peer hostname targets a denied host: {hostname}")
+        try:
+            ip_addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if (
+            ip_addr.is_loopback
+            or ip_addr.is_link_local
+            or ip_addr.is_private
+            or ip_addr.is_unspecified
+        ):
+            raise ValueError(f"Peer hostname targets a denied host: {hostname}")
 
 
 class PeerNotFoundError(Exception):
@@ -194,6 +243,9 @@ class A2ARouter:
             for url in peer_urls:
                 card_url = f"{url.rstrip('/')}/.well-known/agent.json"
                 try:
+                    parsed = httpx.URL(card_url)
+                    if parsed.host:
+                        _check_peer_hostname(parsed.host)
                     resp = await client.get(card_url)
                     resp.raise_for_status()
                     card = AgentCard.model_validate(resp.json())

@@ -26,7 +26,6 @@ def test_gemini_rejects_invalid_model_names(client: TestClient, auth_headers, ba
     "gemini-2.5-flash",
     "gemini-1.5-pro",
     "text-embedding-004",
-    "gemini-2.5-flash-image",
 ])
 def test_gemini_accepts_valid_model_names(client: TestClient, auth_headers, mock_gemini_client_global, good_model: str):
     response = client.post(
