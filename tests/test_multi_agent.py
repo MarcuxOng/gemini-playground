@@ -468,12 +468,13 @@ class TestA2ARouter:
 
         with (
             patch("app.multi_agent.a2a.httpx.AsyncClient", return_value=mock_client),
-            patch("app.multi_agent.a2a._check_peer_hostname", return_value=None),
+            patch("app.multi_agent.a2a._check_peer_hostname", return_value=None) as mock_check_hostname,
         ):
             router = A2ARouter()
             discovered = await router.discover(["https://peer1.example.com"])
             assert discovered == ["https://peer1.example.com"]
             assert "https://peer1.example.com" in router.known_peers
+            mock_check_hostname.assert_called_once_with("peer1.example.com")
 
     def test_known_peers_returns_copy(self):
         from app.multi_agent.a2a import A2ARouter, build_agent_card
