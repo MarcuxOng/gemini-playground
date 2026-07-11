@@ -78,7 +78,7 @@ def test_generate_image_returns_401_without_auth(client: TestClient):
         "/api/v1/image/generate",
         json={"model": "gemini-2.5-flash-image", "prompt": "a cat"},
     )
-    assert response.status_code in [401, 422]
+    assert response.status_code == 401
 
 
 # ── Happy-path edit ────────────────────────────────────────────────────────
@@ -126,4 +126,4 @@ def test_edit_image_returns_401_without_auth(client: TestClient):
         params={"prompt": "edit"},
         files={"file": ("test.png", io.BytesIO(b"x"), "image/png")},
     )
-    assert response.status_code in [401, 422]
+    assert response.status_code == 401
