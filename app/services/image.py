@@ -96,6 +96,10 @@ def generate_image_service(prompt: str, model: str = settings.gemini_image_model
             return _extract_nano_banana_bytes(response)
 
         images = _do_generate()
+        if not images:
+            raise RuntimeError(
+                "Gemini returned no image data — the model may have declined to generate an image or the response was blocked by safety filters."
+            )
         urls: list[str] = []
         for i, (image_bytes, mime_type) in enumerate(images):
             ext = mime_type.split("/")[-1] if "/" in mime_type else "png"
@@ -135,6 +139,10 @@ def edit_image_service(
             return _extract_nano_banana_bytes(response)
 
         images = _do_edit()
+        if not images:
+            raise RuntimeError(
+                "Gemini returned no image data — the model may have declined to edit the image or the response was blocked by safety filters."
+            )
         urls: list[str] = []
         for i, (image_bytes, mime_type) in enumerate(images):
             ext = mime_type.split("/")[-1] if "/" in mime_type else "png"
