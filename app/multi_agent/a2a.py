@@ -150,9 +150,15 @@ AGENTS:
 Respond with ONLY the numeric agent ID in brackets, e.g. [2]. No explanation, no punctuation."""
 
 
-def _check_peer_hostname(hostname: str) -> None:
-    """Resolve *hostname* and reject it if any resolved address is private,
-    link-local, loopback, or on the SSRF denylist."""
+def _check_peer_hostname(hostname: str) -> str:
+    """
+    Resolve *hostname* and reject it if any resolved address is private,
+    link-local, loopback, multicast, reserved, or on the SSRF denylist.
+
+    Returns the first validated IP address, so callers can pin the actual
+    request to it instead of re-resolving *hostname* (which could return a
+    different, unvalidated address — DNS rebinding).
+    """
     hostname_lower = hostname.lower()
     if hostname_lower in _SSRF_DENYLIST:
         raise ValueError(f"Peer hostname targets a denied host: {hostname}")
@@ -172,6 +178,9 @@ def _check_peer_hostname(hostname: str) -> None:
         except socket.gaierror as err:
             raise ValueError(f"Peer hostname cannot be resolved: {hostname}") from err
 
+    if not addresses_to_check:
+        raise ValueError(f"Peer hostname cannot be resolved: {hostname}")
+
     for ip_str in addresses_to_check:
         if ip_str in _SSRF_DENYLIST:
             raise ValueError(f"Peer hostname targets a denied host: {hostname}")
@@ -184,8 +193,13 @@ def _check_peer_hostname(hostname: str) -> None:
             or ip_addr.is_link_local
             or ip_addr.is_private
             or ip_addr.is_unspecified
+            or ip_addr.is_multicast
+            or ip_addr.is_reserved
+            or not ip_addr.is_global
         ):
             raise ValueError(f"Peer hostname targets a denied host: {hostname}")
+
+    return addresses_to_check[0]
 
 
 class PeerNotFoundError(Exception):
@@ -244,9 +258,19 @@ class A2ARouter:
                 card_url = f"{url.rstrip('/')}/.well-known/agent.json"
                 try:
                     parsed = httpx.URL(card_url)
+                    fetch_url = parsed
+                    headers: dict[str, str] = {}
+                    extensions: dict[str, Any] = {}
                     if parsed.host:
-                        _check_peer_hostname(parsed.host)
-                    resp = await client.get(card_url)
+                        pinned_ip = _check_peer_hostname(parsed.host)
+                        if pinned_ip and pinned_ip != parsed.host:
+                            # Connect to the validated IP directly rather than
+                            # letting httpx re-resolve the hostname, which could
+                            # return a different, unvalidated address.
+                            fetch_url = parsed.copy_with(host=pinned_ip)
+                            headers["host"] = parsed.host
+                            extensions["sni_hostname"] = parsed.host
+                    resp = await client.get(fetch_url, headers=headers, extensions=extensions)
                     resp.raise_for_status()
                     card = AgentCard.model_validate(resp.json())
                     self._peers[url] = card
