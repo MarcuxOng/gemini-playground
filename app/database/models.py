@@ -58,7 +58,10 @@ class ThreadMessage(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     thread_id = Column(
-        String, ForeignKey("playground_v1_threads.id", ondelete="CASCADE"), nullable=False
+        String,
+        ForeignKey("playground_v1_threads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     role = Column(String, nullable=False)  # "human" | "ai" | "tool"
     content = Column(Text, nullable=False)
