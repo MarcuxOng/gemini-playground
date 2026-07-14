@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
+from functools import lru_cache
 from typing import Any
 
 import jwt
@@ -115,6 +116,15 @@ async def verify_internal_key(
         )
 
 
+@lru_cache(maxsize=8)
+def _get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
+    """
+    Return a cached PyJWKClient for *jwks_url* so repeated token verifications
+    reuse the client's built-in JWKS cache instead of re-fetching every call.
+    """
+    return jwt.PyJWKClient(jwks_url)
+
+
 async def verify_clerk_token(
     request: Request,
     settings: Settings = Depends(get_settings),
@@ -142,7 +152,7 @@ async def verify_clerk_token(
     token = auth_header.removeprefix("Bearer ")
 
     jwks_url = f"{settings.clerk_issuer}/.well-known/jwks.json"
-    jwks_client = jwt.PyJWKClient(jwks_url)
+    jwks_client = _get_jwks_client(jwks_url)
 
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)

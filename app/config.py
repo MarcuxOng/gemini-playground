@@ -68,11 +68,6 @@ class Settings(BaseSettings):
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)
 
-        # Env-aware embedding model: Vertex AI prod uses multimodalembedding (1408 dims);
-        # Gemini API dev uses gemini-embedding-2 (3072 dims). Explicit env var overrides.
-        if os.getenv("ENV") == "production" and self.gemini_embedding_model == "gemini-embedding-2":
-            self.gemini_embedding_model = "multimodalembedding"
-
         # Attempt to fetch secrets from Secret Manager if running in production (indicated by env)
         if os.getenv("ENV") == "production":
             for field in Settings.model_fields:

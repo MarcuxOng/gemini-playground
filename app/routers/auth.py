@@ -160,6 +160,10 @@ async def generate_key_for_clerk_user(
             .first()
         )
         if existing:
+            logger.info(
+                "IntegrityError creating API key for Clerk user %s: recovered via concurrent-create race (existing key found)",
+                body.clerk_user_id[:8],
+            )
             return APIResponse(
                 data={
                     "id": existing.id,
@@ -169,6 +173,11 @@ async def generate_key_for_clerk_user(
                     "existing": True,
                 }
             )
+        logger.warning(
+            "IntegrityError creating API key for Clerk user %s: no existing key found, unexpected constraint violation: %s",
+            body.clerk_user_id[:8],
+            err,
+        )
         raise HTTPException(
             status_code=409,
             detail="Could not create API key due to a conflict. Please try again.",
