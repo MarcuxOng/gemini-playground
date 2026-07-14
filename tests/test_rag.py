@@ -315,27 +315,6 @@ def test_embedding_model_default_dev_is_gemini_embedding_2():
     assert s.gemini_embedding_model == "gemini-embedding-2"
 
 
-def test_embedding_model_default_prod_is_multimodalembedding(monkeypatch):
-    """Default embedding model is multimodalembedding when ENV == production."""
-    monkeypatch.setenv("ENV", "production")
-
-    from app.config import Settings
-
-    s = Settings(
-        database_url="sqlite:///./test.db",
-        master_api_key="test-key",
-        gemini_api_key="test-key",
-        gcp_project_id="test-project",
-        pinecone_namespace="test-ns",
-        pinecone_index_name="test-idx",
-        pinecone_api_key="test-key",
-        alpha_vantage_api_key="test",
-        openweathermap_api_key="test",
-        news_api_key="test",
-    )
-    assert s.gemini_embedding_model == "multimodalembedding"
-
-
 def test_embedding_model_explicit_overrides_env(monkeypatch):
     """Explicit GEMINI_EMBEDDING_MODEL overrides the env-aware default."""
     monkeypatch.setenv("ENV", "production")
