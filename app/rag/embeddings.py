@@ -13,14 +13,12 @@ logger = logging.getLogger(__name__)
 class GeminiEmbeddings(Embeddings):
     """
     LangChain compatible wrapper for Google Gemini Embeddings API.
-
-    Supports text embeddings and multimodal file embeddings via
-    gemini-embedding-2's unified embedding space.
+    Supports text embeddings and multimodal file embeddings.
     """
 
-    def __init__(self, model: str = settings.gemini_embedding_model):
+    def __init__(self, model: str | None = None):
         self.client = build_genai_client()
-        self.model = model
+        self.model = model or settings.gemini_embedding_model
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed search docs."""
