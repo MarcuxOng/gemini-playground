@@ -45,18 +45,14 @@ def _build_namespace(owner_id: str | None = None) -> str:
     return settings.pinecone_namespace
 
 
-def vectorstore_service(
-    owner_id: str | None = None, embedding_model: str | None = None
-) -> PineconeStore:
+def vectorstore_service(owner_id: str | None = None) -> PineconeStore:
     """
     Helper to create a Pinecone vectorstore scoped to owner_id.
-
-    :param embedding_model: Overrides `settings.gemini_embedding_model` for this call.
     """
     try:
         vectorstore = PineconeStore(
             index_name=settings.pinecone_index_name,
-            embedding=GeminiEmbeddings(model=embedding_model),
+            embedding=GeminiEmbeddings(),
             api_key=settings.pinecone_api_key,
             namespace=_build_namespace(owner_id),
         )
@@ -67,20 +63,16 @@ def vectorstore_service(
         raise
 
 
-def ingest_service(
-    text: str, owner_id: str | None = None, embedding_model: str | None = None
-) -> int:
+def ingest_service(text: str, owner_id: str | None = None) -> int:
     """
     Split text into chunks and store in the owner's Pinecone namespace.
-
-    :param embedding_model: Overrides `settings.gemini_embedding_model` for this call.
     """
     try:
         # Text Splitting & Embeddings
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         docs = text_splitter.create_documents([text])
         ns = _build_namespace(owner_id)
-        vectorstore_service(owner_id, embedding_model).add_documents(docs)
+        vectorstore_service(owner_id).add_documents(docs)
         logger.info(f"Ingested {len(docs)} chunks into namespace: {ns}")
 
         return len(docs)
@@ -90,19 +82,15 @@ def ingest_service(
         raise
 
 
-def query_service(
-    query: str, model: str, owner_id: str | None = None, embedding_model: str | None = None
-) -> str:
+def query_service(query: str, model: str, owner_id: str | None = None) -> str:
     """
     Construct a RAG chain and execute a query against the owner's namespace.
 
     When multimodal files (images, audio, video, PDFs) are retrieved,
     they are passed as attachments so the model can read them directly.
-
-    :param embedding_model: Overrides `settings.gemini_embedding_model` for this call.
     """
     try:
-        docs = search_documents(query, owner_id, embedding_model)
+        docs = search_documents(query, owner_id)
 
         text_docs = [d for d in docs if not d.metadata.get("gemini_file_uri")]
         file_docs = [d for d in docs if d.metadata.get("gemini_file_uri")]
@@ -160,20 +148,16 @@ def query_service(
         raise
 
 
-def search_documents(
-    query: str, owner_id: str | None = None, embedding_model: str | None = None
-) -> list[Document]:
+def search_documents(query: str, owner_id: str | None = None) -> list[Document]:
     """
     Similarity search scoped to owner_id (or the rag_owner_id context var).
 
     Returns Documents that may include multimodal file references.
     Documents with `gemini_file_uri` in metadata represent multimodal file results
     that can be passed as attachments to gemini_service.
-
-    :param embedding_model: Overrides `settings.gemini_embedding_model` for this call.
     """
     try:
-        output = vectorstore_service(owner_id, embedding_model).as_retriever(search_kwargs={"k": 5})
+        output = vectorstore_service(owner_id).as_retriever(search_kwargs={"k": 5})
         return output.invoke(query)
 
     except Exception as e:
@@ -181,9 +165,7 @@ def search_documents(
         raise
 
 
-def ingest_file_service(
-    file_ids: list[str], db: Session, owner_id: str, embedding_model: str | None = None
-) -> int:
+def ingest_file_service(file_ids: list[str], db: Session, owner_id: str) -> int:
     """Generate embeddings from Gemini file URIs and store in Pinecone.
 
     Looks up UploadedFile records, generates multimodal embeddings
@@ -193,7 +175,6 @@ def ingest_file_service(
     :param file_ids: List of UploadedFile DB record UUIDs
     :param db: SQLAlchemy session
     :param owner_id: API key ID for namespace isolation
-    :param embedding_model: Overrides `settings.gemini_embedding_model` for this call.
     :return: number of files ingested
     """
     try:
@@ -228,7 +209,7 @@ def ingest_file_service(
                 )
             )
 
-        vectorstore = vectorstore_service(owner_id, embedding_model)
+        vectorstore = vectorstore_service(owner_id)
         vectorstore.add_file_documents(docs)
 
         ns = _build_namespace(owner_id)

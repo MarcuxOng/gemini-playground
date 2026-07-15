@@ -337,6 +337,78 @@ def test_embedding_model_explicit_overrides_env(monkeypatch):
     assert s.gemini_embedding_model == "custom-embed-v1"
 
 
+
+# --- Option B2-revised: gemini-embedding-2 over Vertex's global region ---
+# In the standard test environment GEMINI_API_KEY is always set (see conftest.py /
+# CI config), so build_global_client() always returns vertexai=False and
+# GeminiEmbeddings._is_vertex is False by default. These tests patch
+# build_global_client() before construction to exercise the Vertex-only branches
+# (uppercase task_type, per-text embedding loop) that only run in production.
+
+
+def _make_vertex_embeddings(mock_client: MagicMock):
+    import app.rag.embeddings as embeddings_module
+
+    mock_client.vertexai = True
+    with patch.object(embeddings_module, "build_global_client", return_value=mock_client):
+        return embeddings_module.GeminiEmbeddings()
+
+
+def test_vertex_embed_documents_loops_per_text_instead_of_batching():
+    """Vertex path: embed_documents calls embed_content once per text (works around the
+    Vertex batch bug where a multi-text call only ever returns one embedding back)."""
+    mock_client = MagicMock()
+
+    def fake_embed_content(model=None, contents=None, config=None):
+        response = MagicMock()
+        embedding = MagicMock()
+        embedding.values = [float(len(contents))]
+        response.embeddings = [embedding]
+        return response
+
+    mock_client.models.embed_content.side_effect = fake_embed_content
+    embeddings = _make_vertex_embeddings(mock_client)
+
+    result = embeddings.embed_documents(["a", "bb", "ccc"])
+
+    assert result == [[1.0], [2.0], [3.0]]
+    assert mock_client.models.embed_content.call_count == 3
+
+
+def test_vertex_task_type_is_uppercased():
+    """Vertex path: task_type is uppercased (Vertex rejects the lowercase form the
+    Developer API accepts)."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.embeddings = [MagicMock(values=[0.1])]
+    mock_client.models.embed_content.return_value = mock_response
+    embeddings = _make_vertex_embeddings(mock_client)
+
+    embeddings.embed_query("hi")
+    query_kwargs = mock_client.models.embed_content.call_args.kwargs
+    assert query_kwargs["config"] == {"task_type": "RETRIEVAL_QUERY"}
+
+    embeddings.embed_file_uri("gs://bucket/img.png", "image/png")
+    file_kwargs = mock_client.models.embed_content.call_args.kwargs
+    assert file_kwargs["config"] == {"task_type": "RETRIEVAL_DOCUMENT"}
+
+
+def test_is_vertex_snapshotted_at_construction_not_reevaluated():
+    """Regression guard: _is_vertex reflects the client's vertexai flag at construction
+    time and doesn't change if .client is swapped out afterward (matches how existing
+    dev-path tests reassign .client post-construction without flipping behavior)."""
+    from app.rag.embeddings import GeminiEmbeddings
+
+    embeddings = GeminiEmbeddings()
+    assert embeddings._is_vertex is False
+
+    mock_vertex_client = MagicMock()
+    mock_vertex_client.vertexai = True
+    embeddings.client = mock_vertex_client
+
+    assert embeddings._is_vertex is False
+
+
 def test_search_documents_returns_multimodal_metadata():
     """search_documents returns Document objects with gemini_file_uri in metadata."""
     from langchain_core.documents import Document
