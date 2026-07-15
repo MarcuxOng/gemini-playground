@@ -24,19 +24,11 @@ router = APIRouter(prefix="/api/v1/rag", tags=["RAG"], dependencies=[Depends(ver
 
 
 class IngestRequest(BaseRequestModel):
-    embedding_model: str | None = Field(
-        default=None,
-        description="Overrides the default embedding model (settings.gemini_embedding_model) for this request.",
-    )
     text: str | None = Field(default=None, max_length=100_000)
     file_ids: list[str] | None = None
 
 
 class QueryRequest(BaseRequestModel):
-    embedding_model: str | None = Field(
-        default=None,
-        description="Overrides the default embedding model (settings.gemini_embedding_model) for this request.",
-    )
     model: ModelName = default_model
     query: str = Field(..., max_length=4_000)
 
@@ -63,9 +55,7 @@ async def ingest_documents(
 
         if body.text:
             text = sanitize_prompt(body.text)
-            text_chunks = await run_in_threadpool(
-                ingest_service, text, owner_id=owner_key, embedding_model=body.embedding_model
-            )
+            text_chunks = await run_in_threadpool(ingest_service, text, owner_id=owner_key)
 
         if body.file_ids:
             file_count = await run_in_threadpool(
@@ -73,7 +63,6 @@ async def ingest_documents(
                 body.file_ids,
                 db,
                 owner_key,
-                embedding_model=body.embedding_model,
             )
 
         if not text_chunks and not file_count:
@@ -112,7 +101,6 @@ async def query_rag(
             query,
             body.model,
             owner_id=owner_key,
-            embedding_model=body.embedding_model,
         )
         return APIResponse(data={"query": body.query, "response": response})
     except HTTPException:

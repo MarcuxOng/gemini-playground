@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     gemini_eval_model: str = "gemini-2.5-pro"
     gemini_image_model: str = "gemini-2.5-flash-image"
     gemini_embedding_model: str = "gemini-embedding-2"
+    gemini_live_model: str = "gemini-live-2.5-flash-native-audio"
 
     # GCP Infrastructure
     gcp_project_id: str
@@ -93,11 +94,39 @@ def get_settings() -> Settings:
 
 
 def build_genai_client() -> genai.Client:
+    """
+    Default client: the *regional* Vertex endpoint (settings.gcp_region=us-central1).
+
+    Use this for everything except models that only serve from the global
+    endpoint — notably the Live API's native-audio models, which serve on
+    the regional endpoint and are absent from global.
+
+    See build_global_client() for the counterpart.
+    Both fall back to the Developer API in local dev.
+    """
     if settings.gemini_api_key:
         return genai.Client(api_key=settings.gemini_api_key)
     return genai.Client(
         vertexai=True, project=settings.gcp_project_id, location=settings.gcp_region
     )
+
+
+def build_global_client() -> genai.Client:
+    """
+    Client pinned to the *global* Vertex endpoint (`location="global"`).
+
+    Some models only serve from global in this project — confirmed live: gemini-embedding-2
+    works on global but 404s on us-central1.
+
+    Use this for those; use build_genai_client() for regional models.
+
+    The two are deliberately kept separate because the region split is mutually exclusive (e.g. native-audio Live is regional-only, embeddings
+    are global-only).
+    Falls back to the Developer API in local dev.
+    """
+    if settings.gemini_api_key:
+        return genai.Client(api_key=settings.gemini_api_key)
+    return genai.Client(vertexai=True, project=settings.gcp_project_id, location="global")
 
 
 default_model = settings.gemini_default_model
