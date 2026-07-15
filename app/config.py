@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     gemini_eval_model: str = "gemini-2.5-pro"
     gemini_image_model: str = "gemini-2.5-flash-image"
     gemini_embedding_model: str = "gemini-embedding-2"
+    gemini_live_model: str = "gemini-live-2.5-flash-native-audio"
 
     # GCP Infrastructure
     gcp_project_id: str
