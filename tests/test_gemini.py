@@ -36,6 +36,23 @@ def test_gemini_accepts_valid_model_names(client: TestClient, auth_headers, mock
     assert response.status_code == 200
 
 
+@pytest.mark.parametrize("bad_field,bad_value", [
+    ("temperature", 2.1),
+    ("temperature", -0.1),
+    ("top_p", 1.1),
+    ("top_p", -0.1),
+    ("top_k", 0),
+    ("thinking_budget", -2),
+])
+def test_gemini_rejects_out_of_range_sampling_params(client: TestClient, auth_headers, bad_field: str, bad_value: float):
+    response = client.post(
+        "/api/v1/gemini/",
+        json={"model": "gemini-2.5-flash", "prompt": "hello", bad_field: bad_value},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
 def test_gemini_structured_rejects_invalid_model(client: TestClient, auth_headers):
     response = client.post(
         "/api/v1/gemini/structured",
@@ -180,6 +197,72 @@ def test_gemini_stop_sequences_and_system_instruction(client: TestClient, auth_h
     assert config.system_instruction == "Always respond in French."
 
 
+def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_headers, mock_gemini_client_global):
+    """With no attachments/native_tools/cache_id/stop_sequences/system_instruction present,
+    sampling params should route through build_llm() (LangChain path), not the raw client."""
+    import app.services.gemini as gemini_module
+
+    response = client.post(
+        "/api/v1/gemini/",
+        json={
+            "model": "gemini-2.5-flash",
+            "prompt": "Say hello",
+            "temperature": 0.9,
+            "top_p": 0.8,
+            "top_k": 20,
+            "seed": 42,
+            "thinking_budget": 1024,
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+
+    call_kwargs = gemini_module.build_llm.call_args.kwargs
+    assert call_kwargs["temperature"] == 0.9
+    assert call_kwargs["top_p"] == 0.8
+    assert call_kwargs["top_k"] == 20
+    assert call_kwargs["seed"] == 42
+    assert call_kwargs["thinking_budget"] == 1024
+
+
+def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers, mock_gemini_client_global):
+    """Combined with system_instruction (which forces the raw client path), sampling params
+    must still reach GenerateContentConfig rather than being dropped."""
+    mock_gemini_client_global.models.generate_content.reset_mock()
+
+    mock_response = MagicMock()
+    mock_response.text = "Response with custom sampling."
+    mock_response.candidates = []
+    mock_response.prompt_feedback = None
+    mock_gemini_client_global.models.generate_content.return_value = mock_response
+
+    response = client.post(
+        "/api/v1/gemini/",
+        json={
+            "model": "gemini-2.5-flash",
+            "prompt": "Say hello",
+            "system_instruction": "Be terse.",
+            "temperature": 0.4,
+            "top_p": 0.9,
+            "top_k": 10,
+            "seed": 7,
+            "thinking_budget": 0,
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+
+    call_kwargs = mock_gemini_client_global.models.generate_content.call_args.kwargs
+    config = call_kwargs["config"]
+    assert config.temperature == 0.4
+    assert config.top_p == 0.9
+    assert config.top_k == 10
+    assert config.seed == 7
+    assert config.thinking_config.thinking_budget == 0
+
+
 @pytest.mark.asyncio
 async def test_gemini_stream_native_tools(client: TestClient, auth_headers, mock_gemini_client_global):
     mock_aio = MagicMock()
@@ -216,4 +299,49 @@ async def test_gemini_stream_native_tools(client: TestClient, auth_headers, mock
     config = call_kwargs["config"]
     assert len(config.tools) == 1
     assert config.tools[0].google_search is not None
+
+
+@pytest.mark.asyncio
+async def test_gemini_stream_sampling_params(client: TestClient, auth_headers, mock_gemini_client_global):
+    """Streaming always uses the raw client, so sampling params should reach
+    GenerateContentConfig even with no other raw-client trigger present."""
+    mock_aio = MagicMock()
+    mock_gemini_client_global.aio = mock_aio
+
+    mock_generate = AsyncMock()
+    mock_aio.models.generate_content_stream = mock_generate
+
+    async def mock_stream_gen():
+        mock_chunk = MagicMock()
+        mock_chunk.text = "Streamed with custom sampling."
+        mock_chunk.candidates = []
+        yield mock_chunk
+
+    mock_generate.return_value = mock_stream_gen()
+
+    response = client.post(
+        "/api/v1/gemini/stream",
+        json={
+            "model": "gemini-2.5-flash",
+            "prompt": "Stream this",
+            "temperature": 1.2,
+            "top_p": 0.75,
+            "top_k": 30,
+            "seed": 99,
+            "thinking_budget": -1,
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    content_str = response.content.decode("utf-8")
+    assert "Streamed with custom sampling." in content_str
+
+    call_kwargs = mock_generate.call_args.kwargs
+    config = call_kwargs["config"]
+    assert config.temperature == 1.2
+    assert config.top_p == 0.75
+    assert config.top_k == 30
+    assert config.seed == 99
+    assert config.thinking_config.thinking_budget == -1
 
