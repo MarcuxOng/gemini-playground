@@ -1,7 +1,7 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, AsyncMock
-
 
 # --- Model name validation ---
 
@@ -150,6 +150,34 @@ def test_gemini_native_tools_code_and_url(client: TestClient, auth_headers, mock
     has_url = any(t.url_context is not None for t in config.tools)
     assert has_code
     assert has_url
+
+
+def test_gemini_stop_sequences_and_system_instruction(client: TestClient, auth_headers, mock_gemini_client_global):
+    mock_gemini_client_global.models.generate_content.reset_mock()
+
+    mock_response = MagicMock()
+    mock_response.text = "Response respecting the system instruction."
+    mock_response.candidates = []
+    mock_response.prompt_feedback = None
+    mock_gemini_client_global.models.generate_content.return_value = mock_response
+
+    response = client.post(
+        "/api/v1/gemini/",
+        json={
+            "model": "gemini-2.5-flash",
+            "prompt": "Say hello",
+            "stop_sequences": ["STOP"],
+            "system_instruction": "Always respond in French.",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+
+    call_kwargs = mock_gemini_client_global.models.generate_content.call_args.kwargs
+    config = call_kwargs["config"]
+    assert config.stop_sequences == ["STOP"]
+    assert config.system_instruction == "Always respond in French."
 
 
 @pytest.mark.asyncio

@@ -38,6 +38,8 @@ class ProviderInput(BaseRequestModel):
     native_tools: list[Literal["search", "code", "url", "location"]] = []
     cache_id: str | None = None
     max_output_tokens: int | None = Field(default=None, ge=1)
+    stop_sequences: list[str] = Field(default=[], max_length=5)
+    system_instruction: str | None = Field(default=None, max_length=4_000)
 
     @field_validator("attachments")
     @classmethod
@@ -85,6 +87,8 @@ async def gemini(
         cache_id=body.cache_id,
         fastapi_request=request,
         max_output_tokens=body.max_output_tokens,
+        stop_sequences=body.stop_sequences,
+        system_instruction=body.system_instruction,
     )
 
     return APIResponse(data=response)
@@ -138,6 +142,8 @@ async def gemini_stream(
                 native_tools=cast(list[str], body.native_tools),
                 cache_id=body.cache_id,
                 max_output_tokens=body.max_output_tokens,
+                stop_sequences=body.stop_sequences,
+                system_instruction=body.system_instruction,
             ):
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'thread_id': None})}\n\n"

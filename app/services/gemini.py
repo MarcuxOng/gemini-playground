@@ -332,6 +332,8 @@ def gemini_service(
     cache_id: str | None = None,
     fastapi_request: Request | None = None,
     max_output_tokens: int | None = None,
+    stop_sequences: list[str] | None = None,
+    system_instruction: str | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
@@ -344,7 +346,7 @@ def gemini_service(
     try:
         if attachments and (not db or not owner_id):
             raise ValueError("attachments require both db and owner_id to be provided")
-        if (attachments and db and owner_id) or native_tools or cache_id:
+        if (attachments and db and owner_id) or native_tools or cache_id or stop_sequences or system_instruction:
             logger.info(
                 f"Generating content with attachments/native_tools using raw client: {model}"
             )
@@ -383,6 +385,8 @@ def gemini_service(
                 safety_settings=SAFETY_SETTINGS,
                 cached_content=cache_id,
                 max_output_tokens=max_tokens,
+                stop_sequences=stop_sequences or None,
+                system_instruction=system_instruction,
             )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
@@ -504,6 +508,8 @@ async def gemini_stream_service(
     native_tools: list[str] | None = None,
     cache_id: str | None = None,
     max_output_tokens: int | None = None,
+    stop_sequences: list[str] | None = None,
+    system_instruction: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     max_tokens = max_output_tokens if max_output_tokens is not None else default_max_tokens
@@ -546,6 +552,8 @@ async def gemini_stream_service(
             safety_settings=SAFETY_SETTINGS,
             cached_content=cache_id,
             max_output_tokens=max_tokens,
+            stop_sequences=stop_sequences or None,
+            system_instruction=system_instruction,
         )
 
         async_client = client.aio
