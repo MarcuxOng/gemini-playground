@@ -352,7 +352,13 @@ def gemini_service(
     try:
         if attachments and (not db or not owner_id):
             raise ValueError("attachments require both db and owner_id to be provided")
-        if (attachments and db and owner_id) or native_tools or cache_id or stop_sequences or system_instruction:
+        if (
+            (attachments and db and owner_id)
+            or native_tools
+            or cache_id
+            or stop_sequences
+            or system_instruction
+        ):
             logger.info(
                 f"Generating content with attachments/native_tools using raw client: {model}"
             )
