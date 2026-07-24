@@ -129,7 +129,7 @@ def build_global_client() -> genai.Client:
     return genai.Client(vertexai=True, project=settings.gcp_project_id, location="global")
 
 
+client = build_genai_client()
+global_client = build_global_client()
 default_model = settings.gemini_default_model
-eval_model = settings.gemini_eval_model
 default_max_tokens = settings.default_max_output_tokens
-eval_max_tokens = settings.eval_max_output_tokens
