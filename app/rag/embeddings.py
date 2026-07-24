@@ -5,7 +5,7 @@ import logging
 from google.genai import types
 from langchain_core.embeddings import Embeddings
 
-from app.config import build_global_client, settings
+from app.config import global_client, settings
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class GeminiEmbeddings(Embeddings):
     """
 
     def __init__(self, model: str | None = None):
-        self.client = build_global_client()
+        self.client = global_client
         self.model = model or settings.gemini_embedding_model
         self._is_vertex: bool = self.client.vertexai
 

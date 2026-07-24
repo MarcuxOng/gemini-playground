@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.agents import PRESETS
-from app.config import default_model, eval_max_tokens, eval_model
+from app.config import default_model, settings
 from app.database.db import get_db
 from app.database.models import APIKey
 from app.multi_agent.a2a import A2ARouter, _check_peer_hostname, build_agent_card
@@ -69,9 +69,9 @@ class ConsensusRequest(BaseModel):
 
     prompt: str = Field(..., min_length=1, max_length=32_000)
     model: ModelName = default_model
-    judge_model: ModelName = eval_model
+    judge_model: ModelName = settings.gemini_eval_model
     perspectives: list[str] | None = None
-    max_output_tokens: int = Field(eval_max_tokens, ge=1, le=65_536)
+    max_output_tokens: int = Field(settings.eval_max_output_tokens, ge=1, le=65_536)
     shared_cache_id: str | None = Field(default=None, max_length=256)
 
 

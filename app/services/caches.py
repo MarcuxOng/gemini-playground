@@ -5,10 +5,9 @@ from typing import Any
 
 from google.genai import types
 
-from app.config import build_genai_client
+from app.config import client
 
 logger = logging.getLogger(__name__)
-client = build_genai_client()
 
 
 def _dict_from_cache(
