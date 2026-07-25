@@ -6,21 +6,60 @@ import logging
 import re
 import threading
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
 from fastapi import Request
-from google.genai import types
+from google import genai
+from google.genai import errors, types
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client, default_max_tokens, default_model
+from app.config import client, default_max_tokens, default_model, global_client
 from app.database.models import UploadedFile
 from app.services.llm import build_llm
 from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
 
 logger = logging.getLogger(__name__)
-client = build_genai_client()
 _token_lock_guard = threading.Lock()
+
+
+def _generate_content_with_fallback(
+    model: str, contents: Any, config: types.GenerateContentConfig
+) -> types.GenerateContentResponse:
+    """
+    Some models are only served from one of the regional/global Vertex endpoints
+    (e.g. gemini-3.5-flash 404s on us-central1 but works on global — see build_global_client).
+    Try the regional client first and fall back to global on a 404 for the resource.
+    """
+    try:
+        return client.models.generate_content(model=model, contents=contents, config=config)
+    except errors.ClientError as e:
+        if e.code != 404:
+            raise
+        logger.warning(
+            f"Model {model!r} not found on regional endpoint, retrying on global: {e.message}"
+        )
+        return global_client.models.generate_content(model=model, contents=contents, config=config)
+
+
+async def _generate_content_stream_with_fallback(
+    model: str, contents: Any, config: types.GenerateContentConfig
+) -> AsyncIterator[types.GenerateContentResponse]:
+    """Streaming counterpart to _generate_content_with_fallback."""
+    try:
+        return await client.aio.models.generate_content_stream(
+            model=model, contents=contents, config=config
+        )
+    except errors.ClientError as e:
+        if e.code != 404:
+            raise
+        logger.warning(
+            f"Model {model!r} not found on regional endpoint, retrying on global: {e.message}"
+        )
+        return await global_client.aio.models.generate_content_stream(
+            model=model, contents=contents, config=config
+        )
+
 
 # Keep in sync with _SAFETY_SETTINGS dict in app/services/llm.py — update both when changing thresholds or categories so raw client and LangChain paths stay consistent.
 SAFETY_SETTINGS = [
@@ -145,21 +184,39 @@ def _log_citation_events(response: types.GenerateContentResponse, model: str) ->
             )
 
 
-def list_gemini_models() -> list[str]:
-    try:
-        logger.info("Fetching Gemini models...")
-        models = sorted(client.models.list(), key=lambda m: m.name or "")
-        model_list: list[str] = []
-        for m in models:
-            if m.name:
-                response = m.name.replace("models/", "")
-                model_list.append(response)
+def list_gemini_models() -> list[dict[str, Any]]:
+    """
+    Lists Gemini models available to this project, merged across the regional
+    and global endpoints (see build_genai_client/build_global_client) — they
+    serve genuinely different catalogs, and a model missing from one may still
+    work via _generate_content_with_fallback. Each endpoint is queried
+    independently so one being unreachable doesn't blank out the other's models.
+    Returns each model's supported_actions (e.g. bidiGenerateContent for Live,
+    embedContent for embeddings) so callers can filter by capability.
+    """
+    catalog: dict[str, set[str]] = {}
 
-        return model_list
+    def _collect(label: str, endpoint_client: genai.Client) -> None:
+        try:
+            for m in endpoint_client.models.list():
+                if not m.name:
+                    continue
+                name = m.name.replace("models/", "")
+                catalog.setdefault(name, set()).update(m.supported_actions or [])
+        except Exception as e:
+            logger.warning(f"Error fetching {label} Gemini models: {e}")
 
-    except Exception as e:
-        logger.error(f"Error fetching Gemini models: {e}")
-        raise
+    logger.info("Fetching Gemini models (regional + global)...")
+    _collect("regional", client)
+    _collect("global", global_client)
+
+    if not catalog:
+        raise RuntimeError("Unable to fetch Gemini models from the regional or global endpoint")
+
+    return [
+        {"name": name, "supported_actions": sorted(actions)}
+        for name, actions in sorted(catalog.items())
+    ]
 
 
 def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> list[dict[str, str]]:
@@ -409,7 +466,9 @@ def gemini_service(
             )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
-            response = client.models.generate_content(model=model, contents=contents, config=config)
+            response = _generate_content_with_fallback(
+                model=model, contents=contents, config=config
+            )
             _check_safety_block(response, model)
             _log_citation_events(response, model)
             _set_request_tokens(fastapi_request, response.usage_metadata)
@@ -485,7 +544,7 @@ def structured_service(
         )
         if cache_id:
             config.cached_content = cache_id
-        response = client.models.generate_content(
+        response = _generate_content_with_fallback(
             model=model,
             contents=prompt,
             config=config,
@@ -595,8 +654,7 @@ async def gemini_stream_service(
             else None,
         )
 
-        async_client = client.aio
-        response = await async_client.models.generate_content_stream(
+        response = await _generate_content_stream_with_fallback(
             model=model, contents=contents, config=config
         )
         sources: list[tuple[str, str]] = []

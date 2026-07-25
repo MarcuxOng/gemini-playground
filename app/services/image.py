@@ -4,14 +4,32 @@ import base64
 import logging
 import uuid
 
-from google.genai import types
+from google.genai import errors, types
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.config import build_genai_client, settings
+from app.config import client, global_client, settings
 from app.utils.gcs import get_gcs_bucket_name, upload_to_gcs
 
 logger = logging.getLogger(__name__)
-client = build_genai_client()
+
+
+def _generate_content_with_fallback(
+    model: str, contents: list[types.Part], config: types.GenerateContentConfig
+) -> types.GenerateContentResponse:
+    """
+    Image models can be regional- or global-only, same as text models
+    (see app/services/gemini.py::_generate_content_with_fallback).
+    Try the regional client first and fall back to global on a 404 for the resource.
+    """
+    try:
+        return client.models.generate_content(model=model, contents=contents, config=config)
+    except errors.ClientError as e:
+        if e.code != 404:
+            raise
+        logger.warning(
+            f"Model {model!r} not found on regional endpoint, retrying on global: {e.message}"
+        )
+        return global_client.models.generate_content(model=model, contents=contents, config=config)
 
 
 def _image_bytes_to_url(data: bytes, mime_type: str = "image/png") -> str:
@@ -85,7 +103,7 @@ def generate_image_service(prompt: str, model: str = settings.gemini_image_model
 
         @_GENERATE_RETRY
         def _do_generate() -> list[tuple[bytes, str]]:
-            response = client.models.generate_content(
+            response = _generate_content_with_fallback(
                 model=model,
                 contents=[types.Part.from_text(text=prompt)],
                 config=types.GenerateContentConfig(
@@ -125,7 +143,7 @@ def edit_image_service(
 
         @_EDIT_RETRY
         def _do_edit() -> list[tuple[bytes, str]]:
-            response = client.models.generate_content(
+            response = _generate_content_with_fallback(
                 model=model,
                 contents=[
                     types.Part.from_bytes(data=base_image_bytes, mime_type="image/png"),
