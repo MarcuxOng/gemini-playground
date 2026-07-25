@@ -340,17 +340,18 @@ def test_embedding_model_explicit_overrides_env(monkeypatch):
 
 # --- Option B2-revised: gemini-embedding-2 over Vertex's global region ---
 # In the standard test environment GEMINI_API_KEY is always set (see conftest.py /
-# CI config), so build_global_client() always returns vertexai=False and
-# GeminiEmbeddings._is_vertex is False by default. These tests patch
-# build_global_client() before construction to exercise the Vertex-only branches
-# (uppercase task_type, per-text embedding loop) that only run in production.
+# CI config), so the shared app.config.global_client singleton always has
+# vertexai=False and GeminiEmbeddings._is_vertex is False by default. These tests
+# patch app.rag.embeddings.global_client before construction to exercise the
+# Vertex-only branches (uppercase task_type, per-text embedding loop) that only
+# run in production.
 
 
 def _make_vertex_embeddings(mock_client: MagicMock):
     import app.rag.embeddings as embeddings_module
 
     mock_client.vertexai = True
-    with patch.object(embeddings_module, "build_global_client", return_value=mock_client):
+    with patch.object(embeddings_module, "global_client", mock_client):
         return embeddings_module.GeminiEmbeddings()
 
 
