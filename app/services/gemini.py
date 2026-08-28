@@ -191,8 +191,8 @@ def list_gemini_models() -> list[dict[str, Any]]:
     serve genuinely different catalogs, and a model missing from one may still
     work via _generate_content_with_fallback. Each endpoint is queried
     independently so one being unreachable doesn't blank out the other's models.
-    Returns each model's supported_actions (e.g. bidiGenerateContent for Live,
-    embedContent for embeddings) so callers can filter by capability.
+    Returns each model's supported_actions (e.g. embedContent for embeddings)
+    so callers can filter by capability.
     """
     catalog: dict[str, set[str]] = {}
 

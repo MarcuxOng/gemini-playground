@@ -31,7 +31,6 @@ It is **not** a SaaS, an open-source library, or a multi-provider playground.
 
 ### Multimodal
 - **Files API** — Upload and query images, audio, video, and PDFs in a single call
-- **Live API** — Real-time bidirectional WebSocket voice/video sessions
 - **Image** — Text-to-image generation and image editing
 
 ### Knowledge & Search
@@ -73,7 +72,6 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
                        │    evals/         → datasets + grader runs               │
                        │    mcp-servers/   → external MCP server management       │
                        │    health/        → dependency status                    │
-                       │  /api/v1/live/ws  → real-time voice/video (WebSocket)    │
                        │                                                          │
   MCP Clients          │  /mcp/sse         → FastMCP server (all tools exposed)   │
   (Claude/Cursor) ────▶│                                                          │
@@ -87,7 +85,6 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
                             - Gemini Pro (complex tasks)             Cloud Trace ($0)
                             - Gemini Embedding 001                   Secret Manager ($0)
                              - Gemini 2.5 Flash Image (image gen)
-                            - Live API (real-time)
                             - Native search grounding
 ```
 
@@ -97,7 +94,7 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
 
 - **FastAPI** (Python 3.11) — async REST API with OpenAPI docs
 - **LangGraph** + **LangChain** — agent orchestration with checkpointed memory
-- **google-genai** — official Gemini SDK (Live API, Image gen, Files, native tools)
+- **google-genai** — official Gemini SDK (Image gen, Files, native tools)
 - **SQLAlchemy** + **Postgres** (Neon, free tier) — relational data with `playground_v1_` prefix convention
 - **Pinecone** (free tier) — vector store for RAG
 - **FastMCP** — MCP server at `/mcp/sse` exposing all registered tools

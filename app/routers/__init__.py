@@ -7,7 +7,6 @@ from app.routers.evals import router as evals_router
 from app.routers.files import router as files_router
 from app.routers.gemini import router as gemini_router
 from app.routers.image import router as image_router
-from app.routers.live import router as live_router
 from app.routers.mcp_server import router as mcp_server_router
 from app.routers.multi_agent import router as multi_agent_router
 from app.routers.rag import router as rag_router
@@ -23,7 +22,6 @@ all_routers = [
     multi_agent_router,
     rag_router,
     image_router,
-    live_router,
     evals_router,
     mcp_server_router,
 ]
