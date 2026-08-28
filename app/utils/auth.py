@@ -3,10 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from functools import lru_cache
-from typing import Any
 
-import jwt
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -114,67 +111,3 @@ async def verify_internal_key(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: Internal access only.",
         )
-
-
-@lru_cache(maxsize=8)
-def _get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
-    """
-    Return a cached PyJWKClient for *jwks_url* so repeated token verifications
-    reuse the client's built-in JWKS cache instead of re-fetching every call.
-    """
-    return jwt.PyJWKClient(jwks_url)
-
-
-async def verify_clerk_token(
-    request: Request,
-    settings: Settings = Depends(get_settings),
-) -> dict[str, Any]:
-    """Verify a Clerk session token via Clerk's JWKS endpoint."""
-    if not settings.clerk_secret_key:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Clerk auth is not configured.",
-        )
-
-    if not settings.clerk_issuer:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Clerk issuer is not configured.",
-        )
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid Authorization header.",
-        )
-
-    token = auth_header.removeprefix("Bearer ")
-
-    jwks_url = f"{settings.clerk_issuer}/.well-known/jwks.json"
-    jwks_client = _get_jwks_client(jwks_url)
-
-    try:
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
-        payload: dict[str, Any] = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            issuer=settings.clerk_issuer,
-            options={"verify_exp": True, "verify_aud": False},
-        )
-        return payload
-
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired."
-        ) from None
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {e}"
-        ) from e
-    except jwt.PyJWKClientError as e:
-        logger.error(f"JWKS fetch failed for {jwks_url}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Unable to verify token."
-        ) from e
