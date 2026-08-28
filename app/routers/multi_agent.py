@@ -9,7 +9,6 @@ from __future__ import annotations
 import base64
 import logging
 from typing import Any
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
@@ -19,7 +18,6 @@ from app.agents import PRESETS
 from app.config import default_model, settings
 from app.database.db import get_db
 from app.database.models import APIKey
-from app.multi_agent.a2a import A2ARouter, _check_peer_hostname, build_agent_card
 from app.multi_agent.consensus import run_consensus
 from app.multi_agent.protocol import AgentMessage, agent_message_to_gemini_parts
 from app.services.agents import AgentRunResponse, run_agent_service
@@ -55,15 +53,6 @@ class InvokeRequest(BaseModel):
         return self
 
 
-class A2ARouteRequest(BaseModel):
-    """Request body for the A2A routing endpoint."""
-
-    task: str = Field(..., min_length=1, max_length=32_000)
-    peer_urls: list[str] = Field(default_factory=list, max_length=20)
-    model: ModelName = default_model
-    shared_cache_id: str | None = Field(default=None, max_length=256)
-
-
 class ConsensusRequest(BaseModel):
     """Request body for the parallel reasoning consensus endpoint."""
 
@@ -73,20 +62,6 @@ class ConsensusRequest(BaseModel):
     perspectives: list[str] | None = None
     max_output_tokens: int = Field(settings.eval_max_output_tokens, ge=1, le=65_536)
     shared_cache_id: str | None = Field(default=None, max_length=256)
-
-
-def _validate_peer_url(raw: str) -> None:
-    """Reject peer URLs targeting internal or private addresses (SSRF guard)."""
-    parsed = urlparse(raw)
-    if parsed.scheme not in ("http", "https"):
-        raise HTTPException(status_code=400, detail=f"Unsupported scheme in peer URL: {raw}")
-    hostname = parsed.hostname
-    if not hostname:
-        raise HTTPException(status_code=400, detail=f"Invalid peer URL (no hostname): {raw}")
-    try:
-        _check_peer_hostname(hostname)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/invoke", response_model=APIResponse[AgentRunResponse])
@@ -186,49 +161,6 @@ async def agent_invoke(
     except Exception as e:
         logger.exception("Error in MIAP agent invoke")
         raise HTTPException(status_code=500, detail="Agent invocation failed.") from e
-
-
-@router.post("/a2a/route", response_model=APIResponse)
-@limiter.limit("30/minute")
-async def a2a_route(
-    request: Request,
-    body: A2ARouteRequest,
-    api_key: APIKey = Depends(verify_api_key),
-) -> APIResponse:  # type: ignore[type-arg]
-    """Route a task to the best-suited agent using A2A discovery.
-
-    Discovers peer agents from the provided *peer_urls* (if any) and the host's
-    own Agent Card, then uses Gemini to select the single best agent for the
-    given task description — no hardcoded routing table.
-    """
-    base_url = str(request.base_url).rstrip("/")
-    host_card = build_agent_card(base_url, default_model=str(body.model))
-
-    router = A2ARouter(host_card=host_card)
-
-    discovered: list[str] = []
-    if body.peer_urls:
-        for url in body.peer_urls:
-            _validate_peer_url(url)
-        discovered = await router.discover(body.peer_urls)
-
-    try:
-        selected_url, selected_card = await router.route(
-            body.task, model=str(body.model), cache_id=body.shared_cache_id
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return APIResponse(
-        data={
-            "task": body.task,
-            "selected_url": selected_url,
-            "agent_name": selected_card.name,
-            "capabilities": [c.model_dump() for c in selected_card.capabilities],
-            "discovered_peers": discovered,
-            "total_candidates": 1 + len(discovered),
-        }
-    )
 
 
 @router.post("/consensus", response_model=APIResponse, dependencies=[Depends(verify_api_key)])

@@ -45,9 +45,9 @@ It is **not** a SaaS, an open-source library, or a multi-provider playground.
 - **API Keys** — Generate, list, and revoke API keys via `/api/v1/auth`
 
 ### Multi-Agent Orchestration
-- **A2A Discovery** — Agent Cards at `/.well-known/agent.json` for peer discovery
-- **Live API Swarm** — Interrupt injection into running agents via WebSocket
 - **Consensus Engine** — Parallel Flash ensemble + Pro judge synthesis
+- **Shared Context** — Cache-backed context shared across agents, with TTL refresh
+- **Multimodal Protocol** — Raw Gemini `Part` passing between agents via `/agents/invoke`
 
 ---
 
