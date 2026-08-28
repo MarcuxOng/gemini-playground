@@ -3,7 +3,6 @@ from __future__ import annotations
 from app.tools.system import (
     files,
     math,
-    pdf,
     rag,
     regex,
     time,
@@ -17,5 +16,4 @@ system_tools = [
     files,
     time,
     rag,
-    pdf,
 ]
