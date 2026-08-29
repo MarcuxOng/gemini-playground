@@ -110,7 +110,9 @@ def query_service(query: str, model: str, owner_id: str | None = None) -> str:
         if not file_docs:
             prompt_text = RAG_PROMPT_TEMPLATE.format(question=query, context=context)
             llm = build_llm_with_region_fallback(model)
-            return str(llm.invoke(prompt_text))
+            # .content, not str(message): str() on an AIMessage yields its repr
+            # ("content='...' additional_kwargs={} ..."), not the answer text.
+            return str(llm.invoke(prompt_text).content)
 
         logger.info(f"RAG query with {len(file_docs)} multimodal file attachment(s)")
         prompt_text = (

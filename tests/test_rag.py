@@ -484,3 +484,29 @@ def test_query_service_falls_back_to_global_on_regional_404(mock_gemini_client_g
 
     assert result == "Answer from the global endpoint."
     mock_global_client.models.generate_content.assert_called_once()
+
+
+def test_text_only_query_returns_the_answer_not_the_message_repr():
+    """`str(AIMessage)` yields "content='...' additional_kwargs={} ..." — not the answer.
+
+    The text-only branch is the common RAG path, and it was returning that repr
+    straight to the caller. Every other call site in the codebase reads
+    `.content`; this one did not, and no test ran the function because the
+    router-level tests patch `query_service` wholesale.
+    """
+    from langchain_core.messages import AIMessage
+
+    from app.services.rag import query_service
+
+    answer = AIMessage(content="Isolation separates concurrent transactions.")
+    mock_llm = MagicMock()
+    mock_llm.invoke.return_value = answer
+
+    with (
+        patch("app.services.rag.search_documents", return_value=[]),
+        patch("app.services.rag.build_llm_with_region_fallback", return_value=mock_llm),
+    ):
+        result = query_service("what is isolation?", "gemini-3.5-flash", owner_id="alice")
+
+    assert result == "Isolation separates concurrent transactions."
+    assert "additional_kwargs" not in result
