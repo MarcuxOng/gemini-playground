@@ -1,9 +1,20 @@
-import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
-from app.app import app
-from app.config import Settings, get_settings
-from app.database.db import Base, engine
+import os
+
+# The rate limiter binds its storage backend at import time — app/utils/limiter.py
+# reads settings.redis_url — and Settings loads the developer's .env, which points
+# REDIS_URL at a real Upstash instance. Importing app.app below would therefore make
+# every rate-limited route reach out over the network, failing the suite on DNS
+# rather than on anything the tests assert. Environment variables outrank .env in
+# pydantic-settings, so pinning it here (before any app.* import) is enough. CI never
+# hit this because it has no .env file.
+os.environ["REDIS_URL"] = "memory://"
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from unittest.mock import MagicMock, patch  # noqa: E402
+from app.app import app  # noqa: E402
+from app.config import Settings, get_settings  # noqa: E402
+from app.database.db import Base, engine  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
