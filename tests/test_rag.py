@@ -310,7 +310,6 @@ def test_embedding_model_default_dev_is_gemini_embedding_2():
         pinecone_api_key="test-key",
         alpha_vantage_api_key="test",
         openweathermap_api_key="test",
-        news_api_key="test",
     )
     assert s.gemini_embedding_model == "gemini-embedding-2"
 
@@ -331,7 +330,6 @@ def test_embedding_model_explicit_overrides_env(monkeypatch):
         pinecone_api_key="test-key",
         alpha_vantage_api_key="test",
         openweathermap_api_key="test",
-        news_api_key="test",
         gemini_embedding_model="custom-embed-v1",
     )
     assert s.gemini_embedding_model == "custom-embed-v1"

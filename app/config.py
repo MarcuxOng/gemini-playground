@@ -45,7 +45,6 @@ class Settings(BaseSettings):
     # Tools API keys
     alpha_vantage_api_key: str
     openweathermap_api_key: str
-    news_api_key: str
 
     # Pinecone Configs
     pinecone_namespace: str
@@ -55,7 +54,6 @@ class Settings(BaseSettings):
     # Base URLs
     alpha_vantage_base_url: str = "https://www.alphavantage.co/query"
     crypto_base_url: str = "https://api.coingecko.com/api/v3"
-    news_base_url: str = "https://newsapi.org/v2/everything"
     weather_base_url: str = "https://api.openweathermap.org/data/2.5/weather"
     wikipedia_base_url: str = "https://en.wikipedia.org/w/api.php"
 

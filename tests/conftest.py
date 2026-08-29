@@ -69,7 +69,6 @@ def client():
         pinecone_api_key="test-key",
         alpha_vantage_api_key="test",
         openweathermap_api_key="test",
-        news_api_key="test",
     )
 
     app.dependency_overrides[get_settings] = lambda: test_settings
