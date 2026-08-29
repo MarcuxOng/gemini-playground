@@ -48,7 +48,14 @@ def register(fn: Callable[..., Any]) -> Callable[..., Any]:
             \"\"\"Add two integers.\"\"\"
             return a + b
     """
-    sig = inspect.signature(fn)
+    # eval_str=True resolves the string annotations that
+    # "from __future__ import annotations" leaves behind in every tool
+    # module. Without it every annotation is a str and _python_type_to_json
+    # falls through to {"type": "string"} for ints, floats and bools alike.
+    try:
+        sig = inspect.signature(fn, eval_str=True)
+    except (NameError, TypeError):  # unresolvable annotation — keep the raw form
+        sig = inspect.signature(fn)
     doc = (fn.__doc__ or "").strip()
 
     properties: dict[str, Any] = {}
