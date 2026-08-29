@@ -310,7 +310,6 @@ def test_embedding_model_default_dev_is_gemini_embedding_2():
         pinecone_api_key="test-key",
         alpha_vantage_api_key="test",
         openweathermap_api_key="test",
-        news_api_key="test",
     )
     assert s.gemini_embedding_model == "gemini-embedding-2"
 
@@ -331,7 +330,6 @@ def test_embedding_model_explicit_overrides_env(monkeypatch):
         pinecone_api_key="test-key",
         alpha_vantage_api_key="test",
         openweathermap_api_key="test",
-        news_api_key="test",
         gemini_embedding_model="custom-embed-v1",
     )
     assert s.gemini_embedding_model == "custom-embed-v1"
@@ -340,17 +338,18 @@ def test_embedding_model_explicit_overrides_env(monkeypatch):
 
 # --- Option B2-revised: gemini-embedding-2 over Vertex's global region ---
 # In the standard test environment GEMINI_API_KEY is always set (see conftest.py /
-# CI config), so build_global_client() always returns vertexai=False and
-# GeminiEmbeddings._is_vertex is False by default. These tests patch
-# build_global_client() before construction to exercise the Vertex-only branches
-# (uppercase task_type, per-text embedding loop) that only run in production.
+# CI config), so the shared app.config.global_client singleton always has
+# vertexai=False and GeminiEmbeddings._is_vertex is False by default. These tests
+# patch app.rag.embeddings.global_client before construction to exercise the
+# Vertex-only branches (uppercase task_type, per-text embedding loop) that only
+# run in production.
 
 
 def _make_vertex_embeddings(mock_client: MagicMock):
     import app.rag.embeddings as embeddings_module
 
     mock_client.vertexai = True
-    with patch.object(embeddings_module, "build_global_client", return_value=mock_client):
+    with patch.object(embeddings_module, "global_client", mock_client):
         return embeddings_module.GeminiEmbeddings()
 
 
@@ -439,3 +438,75 @@ def test_search_documents_returns_multimodal_metadata():
     assert len(results) == 1
     assert results[0].metadata["gemini_file_uri"] == "https://example.com/files/img1"
     assert results[0].metadata["source_type"] == "multimodal"
+
+
+def test_query_service_falls_back_to_global_on_regional_404(mock_gemini_client_global: MagicMock):
+    """Multimodal RAG query (raw-client path) retries on global when the model 404s regionally."""
+    from google.genai import errors
+    from langchain_core.documents import Document
+
+    import app.services.genai_calls as genai_calls_module
+    from app.services.rag import query_service
+
+    file_docs = [
+        Document(
+            page_content="",
+            metadata={
+                "gemini_file_uri": "https://example.com/files/img1",
+                "mime_type": "image/png",
+                "display_name": "screenshot.png",
+            },
+        ),
+    ]
+
+    mock_gemini_client_global.models.generate_content.reset_mock(side_effect=True)
+    mock_gemini_client_global.models.generate_content.side_effect = errors.ClientError(
+        404,
+        {"error": {"code": 404, "status": "NOT_FOUND", "message": "Publisher model not found in region"}},
+    )
+
+    mock_global_response = MagicMock()
+    mock_global_response.text = "Answer from the global endpoint."
+    mock_global_response.candidates = []
+    mock_global_response.prompt_feedback = None
+    mock_global_client = MagicMock()
+    mock_global_client.models.generate_content.return_value = mock_global_response
+
+    try:
+        with (
+            patch("app.services.rag.search_documents", return_value=file_docs),
+            patch.object(genai_calls_module, "global_client", mock_global_client),
+        ):
+            result = query_service("what is in the image?", "gemini-3.5-flash", owner_id="user-a")
+    finally:
+        # Shared session-scoped mock — clear side_effect so it doesn't leak into other tests.
+        mock_gemini_client_global.models.generate_content.side_effect = None
+
+    assert result == "Answer from the global endpoint."
+    mock_global_client.models.generate_content.assert_called_once()
+
+
+def test_text_only_query_returns_the_answer_not_the_message_repr():
+    """`str(AIMessage)` yields "content='...' additional_kwargs={} ..." — not the answer.
+
+    The text-only branch is the common RAG path, and it was returning that repr
+    straight to the caller. Every other call site in the codebase reads
+    `.content`; this one did not, and no test ran the function because the
+    router-level tests patch `query_service` wholesale.
+    """
+    from langchain_core.messages import AIMessage
+
+    from app.services.rag import query_service
+
+    answer = AIMessage(content="Isolation separates concurrent transactions.")
+    mock_llm = MagicMock()
+    mock_llm.invoke.return_value = answer
+
+    with (
+        patch("app.services.rag.search_documents", return_value=[]),
+        patch("app.services.rag.build_llm_with_region_fallback", return_value=mock_llm),
+    ):
+        result = query_service("what is isolation?", "gemini-3.5-flash", owner_id="alice")
+
+    assert result == "Isolation separates concurrent transactions."
+    assert "additional_kwargs" not in result

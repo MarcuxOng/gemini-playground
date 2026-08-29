@@ -26,7 +26,6 @@ class APIKey(Base):
     name = Column(String, index=True)
     hashed_key = Column(String, unique=True, index=True)
     is_active = Column(Boolean, default=True)
-    clerk_user_id = Column(String, nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     revoked_at = Column(DateTime, nullable=True)
 
@@ -140,4 +139,24 @@ class UploadedFile(Base):
     size_bytes = Column(Integer, nullable=False)
     display_name = Column(String, nullable=False)
     owner_id = Column(String, ForeignKey("playground_v1_api_keys.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class CacheRecord(Base):
+    """Ownership record for a Gemini context cache.
+
+    Context caches live in the Gemini project, not in this database, and the
+    Gemini API has no concept of our API keys. Without this table every
+    authenticated caller could list, read, re-use and delete every other
+    caller's cache — and a cache holds the *contents* of the documents it was
+    built from. The cache itself still lives upstream; this row only records
+    who created it.
+    """
+
+    __tablename__ = "playground_v1_caches"
+
+    id = Column(String, primary_key=True)  # the Gemini cache resource name
+    owner_id = Column(String, ForeignKey("playground_v1_api_keys.id"), nullable=False, index=True)
+    model = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))

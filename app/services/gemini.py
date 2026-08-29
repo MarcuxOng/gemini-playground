@@ -10,29 +10,22 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import Request
+from google import genai
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client, default_max_tokens, default_model
+from app.config import client, default_max_tokens, default_model, global_client
 from app.database.models import UploadedFile
-from app.services.llm import build_llm
+from app.services.genai_calls import (
+    generate_content_stream_with_fallback,
+    generate_content_with_fallback,
+)
+from app.services.llm import build_llm, build_llm_with_region_fallback
+from app.services.safety import SAFETY_SETTINGS
 from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
 
 logger = logging.getLogger(__name__)
-client = build_genai_client()
 _token_lock_guard = threading.Lock()
-
-# Keep in sync with _SAFETY_SETTINGS dict in app/services/llm.py — update both when changing thresholds or categories so raw client and LangChain paths stay consistent.
-SAFETY_SETTINGS = [
-    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_LOW_AND_ABOVE"),
-    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_LOW_AND_ABOVE"),
-    types.SafetySetting(
-        category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_LOW_AND_ABOVE"
-    ),
-    types.SafetySetting(
-        category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_LOW_AND_ABOVE"
-    ),
-]
 
 
 class SafetyBlockError(Exception):
@@ -145,21 +138,39 @@ def _log_citation_events(response: types.GenerateContentResponse, model: str) ->
             )
 
 
-def list_gemini_models() -> list[str]:
-    try:
-        logger.info("Fetching Gemini models...")
-        models = sorted(client.models.list(), key=lambda m: m.name or "")
-        model_list: list[str] = []
-        for m in models:
-            if m.name:
-                response = m.name.replace("models/", "")
-                model_list.append(response)
+def list_gemini_models() -> list[dict[str, Any]]:
+    """
+    Lists Gemini models available to this project, merged across the regional
+    and global endpoints (see build_genai_client/build_global_client) — they
+    serve genuinely different catalogs, and a model missing from one may still
+    work via generate_content_with_fallback. Each endpoint is queried
+    independently so one being unreachable doesn't blank out the other's models.
+    Returns each model's supported_actions (e.g. embedContent for embeddings)
+    so callers can filter by capability.
+    """
+    catalog: dict[str, set[str]] = {}
 
-        return model_list
+    def _collect(label: str, endpoint_client: genai.Client) -> None:
+        try:
+            for m in endpoint_client.models.list():
+                if not m.name:
+                    continue
+                name = m.name.replace("models/", "")
+                catalog.setdefault(name, set()).update(m.supported_actions or [])
+        except Exception as e:
+            logger.warning(f"Error fetching {label} Gemini models: {e}")
 
-    except Exception as e:
-        logger.error(f"Error fetching Gemini models: {e}")
-        raise
+    logger.info("Fetching Gemini models (regional + global)...")
+    _collect("regional", client)
+    _collect("global", global_client)
+
+    if not catalog:
+        raise RuntimeError("Unable to fetch Gemini models from the regional or global endpoint")
+
+    return [
+        {"name": name, "supported_actions": sorted(actions)}
+        for name, actions in sorted(catalog.items())
+    ]
 
 
 def resolve_attachments(attachments: list[str], db: Session, owner_id: str) -> list[dict[str, str]]:
@@ -308,7 +319,13 @@ def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
 
         if hasattr(usage_metadata, "prompt_token_count"):
             inp = int(getattr(usage_metadata, "prompt_token_count", 0) or 0)
-            out = int(getattr(usage_metadata, "candidates_token_count", 0) or 0)
+            # Thinking tokens are billed as output but are not part of
+            # candidates_token_count. LangChain already folds them into its
+            # output_tokens, so the raw path must too or the same request
+            # reports different totals depending on which branch served it.
+            out = int(getattr(usage_metadata, "candidates_token_count", 0) or 0) + int(
+                getattr(usage_metadata, "thoughts_token_count", 0) or 0
+            )
         else:
             inp = int(usage_metadata.get("input_tokens", 0))
             out = int(usage_metadata.get("output_tokens", 0))
@@ -319,7 +336,73 @@ def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
             fastapi_request.state.input_tokens = prev_in + inp
             fastapi_request.state.output_tokens = prev_out + out
     except Exception:
-        pass  # token tracking is best-effort
+        # Best-effort: never fail a generation because accounting broke.
+        logger.warning("Token accounting failed for this call", exc_info=True)
+
+
+def _build_contents(
+    prompt: str,
+    attachments: list[str] | None,
+    db: Session | None,
+    owner_id: str | None,
+) -> list[Any]:
+    """Resolve owned file attachments into Parts and append the prompt."""
+    contents: list[Any] = []
+    if attachments and db and owner_id:
+        resolved = resolve_attachments(attachments, db, owner_id)
+        if len(resolved) != len(attachments):
+            raise ValueError("one or more attachments were not found or are not accessible")
+        for att in resolved:
+            contents.append(types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"]))
+    contents.append(prompt)
+    return contents
+
+
+def _build_generate_config(
+    native_tools: list[str] | None = None,
+    cache_id: str | None = None,
+    max_tokens: int | None = None,
+    stop_sequences: list[str] | None = None,
+    system_instruction: str | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    seed: int | None = None,
+    thinking_budget: int | None = None,
+) -> types.GenerateContentConfig:
+    """Assemble the raw-client request config shared by the sync and streaming paths."""
+    tools_config = None
+    if native_tools:
+        tools_config = build_native_tools(
+            grounding="search" in native_tools,
+            code_exec="code" in native_tools,
+            url_context="url" in native_tools,
+            location="location" in native_tools,
+        )
+
+    if cache_id and tools_config:
+        logger.warning(
+            "native_tools ignored: cannot be combined with cached_content "
+            "(%s). Tool declarations must be part of the cache.",
+            cache_id,
+        )
+        tools_config = None
+
+    return types.GenerateContentConfig(
+        tools=tools_config,
+        safety_settings=SAFETY_SETTINGS,
+        cached_content=cache_id,
+        max_output_tokens=max_tokens,
+        stop_sequences=stop_sequences or None,
+        system_instruction=system_instruction,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        seed=seed,
+        thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget)
+        if thinking_budget is not None
+        else None,
+    )
 
 
 def gemini_service(
@@ -332,10 +415,18 @@ def gemini_service(
     cache_id: str | None = None,
     fastapi_request: Request | None = None,
     max_output_tokens: int | None = None,
+    stop_sequences: list[str] | None = None,
+    system_instruction: str | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    seed: int | None = None,
+    thinking_budget: int | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
     Reaches for raw genai.Client only when attachments or native_tools are present since LangChain's Files API integration or native tools is less direct.
+    Sampling params (temperature/top_p/top_k/seed/thinking_budget) are supported on both paths and don't force the raw-client branch.
     """
     if max_output_tokens is not None and max_output_tokens < 1:
         raise ValueError(f"max_output_tokens must be >= 1, got {max_output_tokens}")
@@ -344,49 +435,32 @@ def gemini_service(
     try:
         if attachments and (not db or not owner_id):
             raise ValueError("attachments require both db and owner_id to be provided")
-        if (attachments and db and owner_id) or native_tools or cache_id:
+        if (
+            (attachments and db and owner_id)
+            or native_tools
+            or cache_id
+            or stop_sequences
+            or system_instruction
+        ):
             logger.info(
                 f"Generating content with attachments/native_tools using raw client: {model}"
             )
-            contents: list[Any] = []
-            if attachments and db and owner_id:
-                resolved = resolve_attachments(attachments, db, owner_id)
-                for att in resolved:
-                    contents.append(
-                        types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"])
-                    )
-            contents.append(prompt)
-
-            tools_config = None
-            if native_tools:
-                grounding = "search" in native_tools
-                code_exec = "code" in native_tools
-                url_context = "url" in native_tools
-                location = "location" in native_tools
-                tools_config = build_native_tools(
-                    grounding=grounding,
-                    code_exec=code_exec,
-                    url_context=url_context,
-                    location=location,
-                )
-
-            if cache_id and tools_config:
-                logger.warning(
-                    "native_tools ignored: cannot be combined with cached_content "
-                    "(%s). Tool declarations must be part of the cache.",
-                    cache_id,
-                )
-                tools_config = None
-
-            config = types.GenerateContentConfig(
-                tools=tools_config,
-                safety_settings=SAFETY_SETTINGS,
-                cached_content=cache_id,
-                max_output_tokens=max_tokens,
+            contents: Any = _build_contents(prompt, attachments, db, owner_id)
+            config = _build_generate_config(
+                native_tools=native_tools,
+                cache_id=cache_id,
+                max_tokens=max_tokens,
+                stop_sequences=stop_sequences,
+                system_instruction=system_instruction,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                seed=seed,
+                thinking_budget=thinking_budget,
             )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
-            response = client.models.generate_content(model=model, contents=contents, config=config)
+            response = generate_content_with_fallback(model=model, contents=contents, config=config)
             _check_safety_block(response, model)
             _log_citation_events(response, model)
             _set_request_tokens(fastapi_request, response.usage_metadata)
@@ -411,7 +485,15 @@ def gemini_service(
             return text
         else:
             logger.info(f"Generating content with Gemini model: {model}")
-            llm = build_llm(model, max_output_tokens=max_tokens)
+            llm = build_llm_with_region_fallback(
+                model,
+                max_output_tokens=max_tokens,
+                temperature=temperature if temperature is not None else 0.1,
+                top_p=top_p,
+                top_k=top_k,
+                seed=seed,
+                thinking_budget=thinking_budget,
+            )
             llm_response = llm.invoke(prompt)
             _set_request_tokens(fastapi_request, getattr(llm_response, "usage_metadata", None))
             if llm_response.response_metadata.get("finish_reason") == "SAFETY":
@@ -454,7 +536,7 @@ def structured_service(
         )
         if cache_id:
             config.cached_content = cache_id
-        response = client.models.generate_content(
+        response = generate_content_with_fallback(
             model=model,
             contents=prompt,
             config=config,
@@ -504,6 +586,13 @@ async def gemini_stream_service(
     native_tools: list[str] | None = None,
     cache_id: str | None = None,
     max_output_tokens: int | None = None,
+    stop_sequences: list[str] | None = None,
+    system_instruction: str | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    seed: int | None = None,
+    thinking_budget: int | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     max_tokens = max_output_tokens if max_output_tokens is not None else default_max_tokens
@@ -512,44 +601,26 @@ async def gemini_stream_service(
         if attachments and (not db or not owner_id):
             raise ValueError("attachments require both db and owner_id to be provided")
         logger.info(f"Starting Gemini streaming generation with model: {model}")
+        # A bare string stays a bare string here: only attachments/tools/cache
+        # need the Part-list form, and this is the hot SSE path.
         contents: Any = prompt
         if (attachments and db and owner_id) or native_tools or cache_id:
-            contents = []
-            if attachments and db and owner_id:
-                resolved = resolve_attachments(attachments, db, owner_id)
-                for att in resolved:
-                    contents.append(
-                        types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"])
-                    )
-            contents.append(prompt)
+            contents = _build_contents(prompt, attachments, db, owner_id)
 
-        tools_config = None
-        if native_tools:
-            grounding = "search" in native_tools
-            code_exec = "code" in native_tools
-            url_context = "url" in native_tools
-            location = "location" in native_tools
-            tools_config = build_native_tools(
-                grounding=grounding, code_exec=code_exec, url_context=url_context, location=location
-            )
-
-        if cache_id and tools_config:
-            logger.warning(
-                "native_tools ignored: cannot be combined with cached_content "
-                "(%s). Tool declarations must be part of the cache.",
-                cache_id,
-            )
-            tools_config = None
-
-        config = types.GenerateContentConfig(
-            tools=tools_config,
-            safety_settings=SAFETY_SETTINGS,
-            cached_content=cache_id,
-            max_output_tokens=max_tokens,
+        config = _build_generate_config(
+            native_tools=native_tools,
+            cache_id=cache_id,
+            max_tokens=max_tokens,
+            stop_sequences=stop_sequences,
+            system_instruction=system_instruction,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            seed=seed,
+            thinking_budget=thinking_budget,
         )
 
-        async_client = client.aio
-        response = await async_client.models.generate_content_stream(
+        response = await generate_content_stream_with_fallback(
             model=model, contents=contents, config=config
         )
         sources: list[tuple[str, str]] = []

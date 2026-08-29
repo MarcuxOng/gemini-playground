@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.agents.presets import KNOWN_PRESETS
-from app.config import eval_max_tokens, eval_model
+from app.config import settings
 from app.database.models import APIKey, EvalDataset, EvalRun
 from app.services.agents import AgentRunRequest, run_agent_service
 from app.services.gemini import structured_service
@@ -101,10 +101,10 @@ async def run_eval(
             # Grade output — cap at eval_max_output_tokens (grade results are small JSON)
             grade = await run_in_threadpool(
                 structured_service,
-                model=eval_model,
+                model=settings.gemini_eval_model,
                 prompt=grader_prompt,
                 schema=GRADER_SCHEMA,
-                max_output_tokens=eval_max_tokens,
+                max_output_tokens=settings.eval_max_output_tokens,
             )
 
             is_passed = grade.get("passed", False)

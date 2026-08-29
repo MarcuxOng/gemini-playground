@@ -1,9 +1,27 @@
-import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
-from app.app import app
-from app.config import Settings, get_settings
-from app.database.db import Base, engine
+import os
+
+# The rate limiter binds its storage backend at import time — app/utils/limiter.py
+# reads settings.redis_url — and Settings loads the developer's .env, which points
+# REDIS_URL at a real Upstash instance. Importing app.app below would therefore make
+# every rate-limited route reach out over the network, failing the suite on DNS
+# rather than on anything the tests assert. Environment variables outrank .env in
+# pydantic-settings, so pinning it here (before any app.* import) is enough. CI never
+# hit this because it has no .env file.
+os.environ["REDIS_URL"] = "memory://"
+
+# Same failure mode, different setting: app/database/db.py builds its engine at
+# import time from settings.database_url, so the `client` fixture's Settings
+# override never reaches it. Without this line the suite reads *and writes* the
+# developer's real local database, and tests silently depend on whatever rows
+# happen to be sitting in it.
+os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from unittest.mock import MagicMock, patch  # noqa: E402
+from app.app import app  # noqa: E402
+from app.config import Settings, get_settings  # noqa: E402
+from app.database.db import Base, engine  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -13,13 +31,40 @@ def mock_observability():
         yield
 
 
+# Attachment that tests reference by a fixed ID. It used to be an ambient row in
+# the developer's local database; seeding it here makes the suite self-contained.
+SEEDED_FILE_ID = "00000000-0000-0000-0000-000000000001"
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_database():
     # Initialize the database tables once for the test session
     Base.metadata.create_all(bind=engine)
+
+    from app.database.db import SessionLocal
+    from app.database.models import APIKey, UploadedFile
+
+    db = SessionLocal()
+    try:
+        if db.get(APIKey, "master") is None:
+            db.add(APIKey(id="master", name="Master Key", hashed_key="seeded-master"))
+        if db.get(UploadedFile, SEEDED_FILE_ID) is None:
+            db.add(
+                UploadedFile(
+                    id=SEEDED_FILE_ID,
+                    gemini_file_name="files/seeded",
+                    gemini_file_uri="https://generativelanguage.googleapis.com/v1beta/files/seeded",
+                    mime_type="application/pdf",
+                    size_bytes=1024,
+                    display_name="seeded.pdf",
+                    owner_id="master",
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
     yield
-    # Optional: Drop tables after session if needed
-    # Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -44,9 +89,17 @@ def mock_gemini_client_global():
 
     with (
         patch("app.services.gemini.client", mock_client),
-        patch("app.services.image.client", mock_client),
+        patch("app.services.gemini.global_client", mock_client),
+        # The regional/global fallback call path lives in one module now (F3).
+        patch("app.services.genai_calls.client", mock_client),
+        patch("app.services.genai_calls.global_client", mock_client),
         patch("app.services.caches.client", mock_client),
         patch("app.services.gemini.build_llm", return_value=mock_llm_instance),
+        # Direct .invoke() sites use the regional/global fallback wrapper (F9).
+        patch(
+            "app.services.gemini.build_llm_with_region_fallback",
+            return_value=mock_llm_instance,
+        ),
         patch("app.agents.base.build_llm", return_value=mock_llm_instance),
         patch("app.services.agents.run_once", side_effect=_mock_run_once),
         patch("app.services.agents.get_checkpointer", return_value=None),
@@ -68,7 +121,6 @@ def client():
         pinecone_api_key="test-key",
         alpha_vantage_api_key="test",
         openweathermap_api_key="test",
-        news_api_key="test",
     )
 
     app.dependency_overrides[get_settings] = lambda: test_settings

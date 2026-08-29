@@ -4,17 +4,21 @@ import logging
 from contextvars import ContextVar
 from typing import Any
 
-from google import genai
 from google.genai import types
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy.orm import Session
 
-from app.config import build_genai_client, settings
+from app.config import build_vertex_client, settings
 from app.database.models import UploadedFile
 from app.rag import GeminiEmbeddings, PineconeStore
-from app.services.gemini import SAFETY_SETTINGS, SafetyBlockError, _check_safety_block
-from app.services.llm import build_llm
+from app.services.gemini import (
+    SafetyBlockError,
+    _check_safety_block,
+)
+from app.services.genai_calls import generate_content_with_fallback
+from app.services.llm import build_llm_with_region_fallback
+from app.services.safety import SAFETY_SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +109,10 @@ def query_service(query: str, model: str, owner_id: str | None = None) -> str:
 
         if not file_docs:
             prompt_text = RAG_PROMPT_TEMPLATE.format(question=query, context=context)
-            llm = build_llm(model)
-            return str(llm.invoke(prompt_text))
+            llm = build_llm_with_region_fallback(model)
+            # .content, not str(message): str() on an AIMessage yields its repr
+            # ("content='...' additional_kwargs={} ..."), not the answer text.
+            return str(llm.invoke(prompt_text).content)
 
         logger.info(f"RAG query with {len(file_docs)} multimodal file attachment(s)")
         prompt_text = (
@@ -124,20 +130,14 @@ def query_service(query: str, model: str, owner_id: str | None = None) -> str:
         # GCS URIs (gs://) require Vertex AI — Gemini API client can't read them.
         # Gemini Files API URIs work with either client.
         has_gcs = any(str(fd.metadata["gemini_file_uri"]).startswith("gs://") for fd in file_docs)
+        config = types.GenerateContentConfig(safety_settings=SAFETY_SETTINGS)
         if has_gcs and settings.gcp_project_id:
-            client = genai.Client(
-                vertexai=True,
-                project=settings.gcp_project_id,
-                location=settings.gcp_region,
+            gcs_client = build_vertex_client()
+            response = gcs_client.models.generate_content(
+                model=model, contents=contents, config=config
             )
         else:
-            client = build_genai_client()
-
-        response = client.models.generate_content(
-            model=model,
-            contents=contents,
-            config=types.GenerateContentConfig(safety_settings=SAFETY_SETTINGS),
-        )
+            response = generate_content_with_fallback(model=model, contents=contents, config=config)
         _check_safety_block(response, model)
         return str(response.text or "")
 

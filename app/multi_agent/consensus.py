@@ -16,7 +16,7 @@ from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
-from app.config import default_model, eval_max_tokens, eval_model
+from app.config import default_model, settings
 from app.services.gemini import gemini_service, structured_service
 
 logger = logging.getLogger(__name__)
@@ -126,8 +126,8 @@ async def run_consensus(
     prompt: str,
     model: str = default_model,
     perspectives: list[str] | None = None,
-    judge_model: str = eval_model,
-    max_output_tokens: int = eval_max_tokens,
+    judge_model: str = settings.gemini_eval_model,
+    max_output_tokens: int = settings.eval_max_output_tokens,
     fastapi_request: Any = None,
     cache_id: str | None = None,
 ) -> ConsensusResult:
@@ -164,7 +164,10 @@ async def run_consensus(
     results: list[dict[str, str]] = []
     failed = 0
     for i, item in enumerate(gathered):
-        if isinstance(item, Exception):
+        # BaseException, not Exception: asyncio.CancelledError is a
+        # BaseException, and an Exception-only check appends the error object
+        # itself to results, which then blows up in _format_perspectives.
+        if isinstance(item, BaseException):
             logger.warning("Worker '%s' failed: %s", perspectives[i], item)
             failed += 1
         else:
