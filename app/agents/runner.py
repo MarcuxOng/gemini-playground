@@ -36,11 +36,22 @@ def run_once(
             logger.exception("Agent invocation failed")
             raise RuntimeError(f"Agent invocation failed: {type(e).__name__}: {e}") from e
 
-        content = result["messages"][-1].content
+        messages = result.get("messages", [])
+        content = messages[-1].content
+
+        # Only this turn's messages carry this turn's cost. With a checkpointer
+        # `messages` is the whole thread, so summing all of it re-counts every
+        # previous turn and the reported usage grows with conversation length.
+        # The last human message marks where this turn began.
+        turn_start = 0
+        for idx in range(len(messages) - 1, -1, -1):
+            if getattr(messages[idx], "type", None) == "human":
+                turn_start = idx
+                break
 
         input_tokens = 0
         output_tokens = 0
-        for msg in result.get("messages", []):
+        for msg in messages[turn_start:]:
             if hasattr(msg, "usage_metadata") and msg.usage_metadata:
                 um = msg.usage_metadata
                 if hasattr(um, "get"):

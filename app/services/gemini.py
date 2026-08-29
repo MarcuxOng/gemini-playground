@@ -319,7 +319,13 @@ def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
 
         if hasattr(usage_metadata, "prompt_token_count"):
             inp = int(getattr(usage_metadata, "prompt_token_count", 0) or 0)
-            out = int(getattr(usage_metadata, "candidates_token_count", 0) or 0)
+            # Thinking tokens are billed as output but are not part of
+            # candidates_token_count. LangChain already folds them into its
+            # output_tokens, so the raw path must too or the same request
+            # reports different totals depending on which branch served it.
+            out = int(getattr(usage_metadata, "candidates_token_count", 0) or 0) + int(
+                getattr(usage_metadata, "thoughts_token_count", 0) or 0
+            )
         else:
             inp = int(usage_metadata.get("input_tokens", 0))
             out = int(usage_metadata.get("output_tokens", 0))
@@ -330,7 +336,8 @@ def _set_request_tokens(fastapi_request: Any, usage_metadata: Any) -> None:
             fastapi_request.state.input_tokens = prev_in + inp
             fastapi_request.state.output_tokens = prev_out + out
     except Exception:
-        pass  # token tracking is best-effort
+        # Best-effort: never fail a generation because accounting broke.
+        logger.warning("Token accounting failed for this call", exc_info=True)
 
 
 def _build_contents(
