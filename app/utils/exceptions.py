@@ -48,3 +48,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         meta={"path": request.url.path, "status_code": 500},
     )
     return JSONResponse(status_code=500, content=response.model_dump())
+
+
+async def permission_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """403 for resources the caller does not own (e.g. another key's context cache)."""
+    logger.warning(f"Permission denied for {request.url.path}: {exc}")
+    response: APIResponse[None] = APIResponse(
+        success=False,
+        error=str(exc) or "Forbidden",
+        meta={"path": request.url.path, "status_code": 403},
+    )
+    return JSONResponse(status_code=403, content=response.model_dump())

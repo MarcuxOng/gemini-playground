@@ -19,6 +19,7 @@ from app.config import default_max_tokens, default_model
 from app.database.models import Agents, APIKey, MCPServerConfig, Thread, ThreadMessage
 from app.mcp.client import load_mcp_tools
 from app.memory.checkpointer import get_checkpointer
+from app.services.caches import assert_cache_access
 from app.services.gemini import SafetyBlockError, generate_thread_title, resolve_attachments
 from app.services.rag import rag_owner_id
 from app.utils.models import BaseRequestModel
@@ -150,6 +151,9 @@ async def run_agent_service(
     tools: list[str] = []
     model: str = ""
     preset_name: str = ""
+
+    if request.shared_cache_id:
+        assert_cache_access(db, request.shared_cache_id, str(api_key.id))
 
     # Determine agent config
     if request.agent_id:
@@ -330,6 +334,9 @@ async def run_agent_stream_service(
     tools: list[str] = []
     model: str = ""
     preset_name: str = ""
+
+    if request.shared_cache_id:
+        assert_cache_access(db, request.shared_cache_id, str(api_key.id))
 
     # Determine agent config
     if request.agent_id:

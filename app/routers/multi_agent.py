@@ -21,9 +21,11 @@ from app.database.models import APIKey
 from app.multi_agent.consensus import run_consensus
 from app.multi_agent.protocol import AgentMessage, agent_message_to_gemini_parts
 from app.services.agents import AgentRunResponse, run_agent_service
+from app.services.caches import assert_cache_access
 from app.utils.auth import verify_api_key, verify_internal_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
+from app.utils.sanitizer import sanitize_prompt
 from app.utils.validators import ModelName
 
 logger = logging.getLogger(__name__)
@@ -59,7 +61,9 @@ class ConsensusRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=32_000)
     model: ModelName = default_model
     judge_model: ModelName = settings.gemini_eval_model
-    perspectives: list[str] | None = None
+    # Each perspective is one more parallel Gemini call, so the list is capped:
+    # an uncapped list turns a single rate-limited request into unbounded fan-out.
+    perspectives: list[str] | None = Field(default=None, max_length=8)
     max_output_tokens: int = Field(settings.eval_max_output_tokens, ge=1, le=65_536)
     shared_cache_id: str | None = Field(default=None, max_length=256)
 
@@ -133,6 +137,7 @@ async def agent_invoke(
         len(body.message.parts),
     )
 
+    message_text = sanitize_prompt(message_text) if message_text else message_text
     sender_prefix = f"[MIAP from {body.message.sender_id}] "
     has_multimodal = any(p.get("type") == "media" for p in multimodal_parts)
     if has_multimodal:
@@ -163,11 +168,13 @@ async def agent_invoke(
         raise HTTPException(status_code=500, detail="Agent invocation failed.") from e
 
 
-@router.post("/consensus", response_model=APIResponse, dependencies=[Depends(verify_api_key)])
+@router.post("/consensus", response_model=APIResponse)
 @limiter.limit("10/minute")
 async def agent_consensus(
     request: Request,
     body: ConsensusRequest,
+    db: Session = Depends(get_db),
+    api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     """Run the parallel reasoning engine.
 
@@ -175,10 +182,13 @@ async def agent_consensus(
     each with a different perspective system prompt. A Pro judge
     synthesises the outputs into one robust response.
     """
+    prompt = sanitize_prompt(body.prompt)
+    if body.shared_cache_id:
+        assert_cache_access(db, body.shared_cache_id, str(api_key.id))
     try:
         request.state.model = f"{body.model}+{body.judge_model}"
         result = await run_consensus(
-            prompt=body.prompt,
+            prompt=prompt,
             model=str(body.model),
             perspectives=body.perspectives,
             judge_model=str(body.judge_model),

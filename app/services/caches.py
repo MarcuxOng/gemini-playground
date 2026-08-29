@@ -4,8 +4,10 @@ import logging
 from typing import Any
 
 from google.genai import types
+from sqlalchemy.orm import Session
 
 from app.config import client
+from app.database.models import CacheRecord
 
 logger = logging.getLogger(__name__)
 
@@ -69,3 +71,52 @@ def update_cache_ttl(cache_id: str, ttl: str) -> dict[str, Any]:
     config = types.UpdateCachedContentConfig(ttl=ttl)
     cache = client.caches.update(name=cache_id, config=config)
     return _dict_from_cache(cache, fallback_id=cache_id, fallback_ttl=ttl)
+
+
+# ── Ownership ─────────────────────────────────────────────────────────────────
+#
+# Gemini context caches are project-scoped resources with no notion of this
+# platform's API keys, so ownership is tracked here instead. Every read, reuse
+# and delete path must go through record_cache_owner / assert_cache_access.
+
+
+def record_cache_owner(
+    db: Session, cache_id: str, owner_id: str, model: str, display_name: str | None
+) -> None:
+    """Persist the ownership row for a freshly created context cache."""
+    # merge, not add: an upstream cache_id that already has a row would
+    # otherwise raise IntegrityError and fail an otherwise successful create.
+    db.merge(CacheRecord(id=cache_id, owner_id=owner_id, model=model, display_name=display_name))
+    db.commit()
+
+
+def owned_cache_ids(db: Session, owner_id: str) -> set[str]:
+    """Return the cache IDs owned by *owner_id* ('master' sees every record)."""
+    query = db.query(CacheRecord.id)
+    if owner_id != "master":
+        query = query.filter(CacheRecord.owner_id == owner_id)
+    return {row[0] for row in query.all()}
+
+
+def assert_cache_access(db: Session, cache_id: str, owner_id: str) -> None:
+    """Raise PermissionError unless *owner_id* may use *cache_id*.
+
+    A cache holds the contents of the documents it was built from, so an
+    unowned cache_id is refused rather than silently ignored.
+    """
+    if owner_id == "master":
+        return
+    record = (
+        db.query(CacheRecord)
+        .filter(CacheRecord.id == cache_id, CacheRecord.owner_id == owner_id)
+        .first()
+    )
+    if record is None:
+        logger.warning("Denied cache access: %r requested by %r", cache_id, owner_id)
+        raise PermissionError(f"Context cache {cache_id} not found or not accessible")
+
+
+def delete_cache_record(db: Session, cache_id: str) -> None:
+    """Drop the ownership row for a deleted cache."""
+    db.query(CacheRecord).filter(CacheRecord.id == cache_id).delete()
+    db.commit()

@@ -67,27 +67,58 @@ async def create_cache(
         display_name=body.display_name,
         ttl=body.ttl,
     )
+    caches_service.record_cache_owner(
+        db,
+        cache_id=str(result["cache_id"]),
+        owner_id=str(api_key.id),
+        model=str(result.get("model") or body.model),
+        display_name=body.display_name,
+    )
     return APIResponse(data=result)
 
 
 @router.get("/", response_model=APIResponse)
 @limiter.limit("20/minute")
-async def list_caches(request: Request) -> APIResponse:  # type: ignore[type-arg]
-    result = await run_in_threadpool(caches_service.list_caches)
-    return APIResponse(data=result)
+async def list_caches(
+    request: Request,
+    db: Session = Depends(get_db),
+    api_key: APIKey = Depends(verify_api_key),
+) -> APIResponse:  # type: ignore[type-arg]
+    """List the caller's context caches.
+
+    Upstream Gemini returns every cache in the project, so the live list is
+    intersected with the caller's ownership records — otherwise one key would
+    see every other key's cached documents.
+    """
+    live = await run_in_threadpool(caches_service.list_caches)
+    owned = caches_service.owned_cache_ids(db, str(api_key.id))
+    return APIResponse(data=[c for c in live if c["cache_id"] in owned])
 
 
 @router.get("/{cache_id:path}", response_model=APIResponse)
 @limiter.limit("20/minute")
-async def get_cache(request: Request, cache_id: str) -> APIResponse:  # type: ignore[type-arg]
+async def get_cache(
+    request: Request,
+    cache_id: str,
+    db: Session = Depends(get_db),
+    api_key: APIKey = Depends(verify_api_key),
+) -> APIResponse:  # type: ignore[type-arg]
+    caches_service.assert_cache_access(db, cache_id, str(api_key.id))
     result = await run_in_threadpool(caches_service.get_cache, cache_id)
     return APIResponse(data=result)
 
 
 @router.delete("/{cache_id:path}", response_model=APIResponse)
 @limiter.limit("10/minute")
-async def delete_cache(request: Request, cache_id: str) -> APIResponse:  # type: ignore[type-arg]
+async def delete_cache(
+    request: Request,
+    cache_id: str,
+    db: Session = Depends(get_db),
+    api_key: APIKey = Depends(verify_api_key),
+) -> APIResponse:  # type: ignore[type-arg]
+    caches_service.assert_cache_access(db, cache_id, str(api_key.id))
     await run_in_threadpool(caches_service.delete_cache, cache_id)
+    caches_service.delete_cache_record(db, cache_id)
     return APIResponse(data={"deleted": cache_id})
 
 
@@ -97,6 +128,9 @@ async def update_cache(
     request: Request,
     cache_id: str,
     body: UpdateCacheInput,
+    db: Session = Depends(get_db),
+    api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
+    caches_service.assert_cache_access(db, cache_id, str(api_key.id))
     result = await run_in_threadpool(caches_service.update_cache_ttl, cache_id, body.ttl)
     return APIResponse(data=result)

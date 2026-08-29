@@ -16,6 +16,7 @@ from app.services.gemini import SafetyBlockError
 from app.utils.exceptions import (
     http_exception_handler,
     input_sanitization_exception_handler,
+    permission_error_handler,
     safety_block_exception_handler,
     unhandled_exception_handler,
 )
@@ -54,6 +55,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(SafetyBlockError, safety_block_exception_handler)
 app.add_exception_handler(InputSanitizationError, input_sanitization_exception_handler)
+app.add_exception_handler(PermissionError, permission_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 

@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from app.config import default_model
 from app.database.db import get_db
 from app.database.models import APIKey
+from app.services.caches import assert_cache_access
 from app.services.gemini import (
     gemini_service,
     gemini_stream_service,
@@ -76,6 +77,8 @@ async def gemini(
     api_key: APIKey = Depends(verify_api_key),
 ) -> APIResponse:  # type: ignore[type-arg]
     prompt = sanitize_prompt(body.prompt)
+    if body.cache_id:
+        assert_cache_access(db, body.cache_id, str(api_key.id))
     logger.info(
         f"Calling Gemini API with model: {body.model}, prompt_len: {len(prompt)}, "
         f"attachments: {len(body.attachments)}, native_tools: {body.native_tools}"
@@ -135,6 +138,8 @@ async def gemini_stream(
     Stream Gemini response
     """
     prompt = sanitize_prompt(body.prompt)
+    if body.cache_id:
+        assert_cache_access(db, body.cache_id, str(api_key.id))
     logger.info(
         f"Starting Gemini stream with model: {body.model}, prompt_len: {len(prompt)}, "
         f"attachments: {len(body.attachments)}, native_tools: {body.native_tools}"
