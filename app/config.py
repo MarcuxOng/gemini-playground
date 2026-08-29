@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
 
     # Preset Gemini Models
-    gemini_default_model: str = "gemini-2.5-flash"
-    gemini_eval_model: str = "gemini-2.5-pro"
+    gemini_default_model: str = "gemini-3.5-flash"
+    gemini_eval_model: str = "gemini-3.6-flash"
     gemini_embedding_model: str = "gemini-embedding-2"
 
     # GCP Infrastructure
