@@ -89,7 +89,7 @@ pip-delete-this-directory.txt
 Thumbs.db
 
 # Project specific
-misc/
+.misc/
 .claude/
 .gemini/
 .agents/
