@@ -32,7 +32,7 @@ Guidelines:
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
-TOOLS = ["search_knowledge_base", "calculate", "scrape_url"]
+TOOLS = ["search_knowledge_base", "calculate", "google_search"]
 
 
 def build_knowledge_agent(
