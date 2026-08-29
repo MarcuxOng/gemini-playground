@@ -45,9 +45,16 @@ def mock_gemini_client_global():
     with (
         patch("app.services.gemini.client", mock_client),
         patch("app.services.gemini.global_client", mock_client),
-        patch("app.services.image.client", mock_client),
+        # The regional/global fallback call path lives in one module now (F3).
+        patch("app.services.genai_calls.client", mock_client),
+        patch("app.services.genai_calls.global_client", mock_client),
         patch("app.services.caches.client", mock_client),
         patch("app.services.gemini.build_llm", return_value=mock_llm_instance),
+        # Direct .invoke() sites use the regional/global fallback wrapper (F9).
+        patch(
+            "app.services.gemini.build_llm_with_region_fallback",
+            return_value=mock_llm_instance,
+        ),
         patch("app.agents.base.build_llm", return_value=mock_llm_instance),
         patch("app.services.agents.run_once", side_effect=_mock_run_once),
         patch("app.services.agents.get_checkpointer", return_value=None),
