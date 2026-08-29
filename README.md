@@ -31,7 +31,6 @@ It is **not** a SaaS, an open-source library, or a multi-provider playground.
 
 ### Multimodal
 - **Files API** — Upload and query images, audio, video, and PDFs in a single call
-- **Image** — Text-to-image generation and image editing
 
 ### Knowledge & Search
 - **RAG Pipeline** — Gemini embeddings + Pinecone vector store, exposed as the `search_knowledge_base` tool
@@ -67,7 +66,6 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
                        │    rag/           → ingest + query (Pinecone)            │
                        │    files/         → multimodal uploads (Files API)       │
                        │    gemini/        → text + streaming + structured        │
-                       │    image/         → generation + edit                    │
                        │    caches/        → context caching                      │
                        │    evals/         → datasets + grader runs               │
                        │    mcp-servers/   → external MCP server management       │
@@ -84,7 +82,6 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
    Pinecone (Vectors)       - Gemini Flash 2.x (primary)             Cloud Logging ($0)
                             - Gemini Pro (complex tasks)             Cloud Trace ($0)
                             - Gemini Embedding 001                   Secret Manager ($0)
-                             - Gemini 2.5 Flash Image (image gen)
                             - Native search grounding
 ```
 
@@ -94,7 +91,7 @@ The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Ru
 
 - **FastAPI** (Python 3.11) — async REST API with OpenAPI docs
 - **LangGraph** + **LangChain** — agent orchestration with checkpointed memory
-- **google-genai** — official Gemini SDK (Image gen, Files, native tools)
+- **google-genai** — official Gemini SDK (Files API, native tools, context caching)
 - **SQLAlchemy** + **Postgres** (Neon, free tier) — relational data with `playground_v1_` prefix convention
 - **Pinecone** (free tier) — vector store for RAG
 - **FastMCP** — MCP server at `/mcp/sse` exposing all registered tools
