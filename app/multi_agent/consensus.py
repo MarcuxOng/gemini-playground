@@ -164,7 +164,10 @@ async def run_consensus(
     results: list[dict[str, str]] = []
     failed = 0
     for i, item in enumerate(gathered):
-        if isinstance(item, Exception):
+        # BaseException, not Exception: asyncio.CancelledError is a
+        # BaseException, and an Exception-only check appends the error object
+        # itself to results, which then blows up in _format_perspectives.
+        if isinstance(item, BaseException):
             logger.warning("Worker '%s' failed: %s", perspectives[i], item)
             failed += 1
         else:
