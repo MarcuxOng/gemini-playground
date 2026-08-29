@@ -5,24 +5,23 @@ import os
 from typing import Any
 
 import google.auth
+from google.api_core.exceptions import NotFound
 from google.auth.exceptions import DefaultCredentialsError
-from google.genai.types import HarmBlockThreshold, HarmCategory
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import BaseMessage
+from langchain_core.runnables import Runnable
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import settings
+from app.services.safety import LANGCHAIN_SAFETY_SETTINGS
 
 logger = logging.getLogger(__name__)
 
-# Dict format used by ChatGoogleGenerativeAI (both Vertex AI and AI Studio modes).
-# Keep in sync with SAFETY_SETTINGS list in app/services/gemini.py.
-_SAFETY_SETTINGS: dict[HarmCategory, HarmBlockThreshold] = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-}
-
 _IS_PRODUCTION = os.getenv("ENV") == "production"
+
+# A model absent from one Vertex endpoint surfaces as NotFound (HTTP 404) — the
+# LangChain-side equivalent of the ClientError(404) the raw path retries on.
+_REGION_FALLBACK_EXCEPTIONS: tuple[type[BaseException], ...] = (NotFound,)
 
 
 def build_llm(
@@ -34,14 +33,20 @@ def build_llm(
     top_k: int | None = None,
     seed: int | None = None,
     thinking_budget: int | None = None,
+    location: str | None = None,
 ) -> ChatGoogleGenerativeAI:
-    """Builds a Gemini LLM via ChatGoogleGenerativeAI (Vertex AI prod, AI Studio dev)."""
+    """Builds a Gemini LLM via ChatGoogleGenerativeAI (Vertex AI prod, AI Studio dev).
+
+    *location* overrides the Vertex endpoint region; it is ignored on the AI
+    Studio dev path, which is not region-scoped. Pass ``"global"`` to reach
+    models that only serve from the global endpoint.
+    """
     logger.info(f"Building Gemini LLM: {model_name}")
 
     common: dict[str, Any] = {
         "model": model_name,
         "temperature": temperature,
-        "safety_settings": _SAFETY_SETTINGS,
+        "safety_settings": LANGCHAIN_SAFETY_SETTINGS,
     }
     if cached_content:
         common["cached_content"] = cached_content
@@ -73,7 +78,7 @@ def build_llm(
         try:
             google.auth.default()
             return ChatGoogleGenerativeAI(
-                project=project_id, location=settings.gcp_region, **common
+                project=project_id, location=location or settings.gcp_region, **common
             )
         except DefaultCredentialsError:
             if _IS_PRODUCTION:
@@ -94,3 +99,27 @@ def build_llm(
         )
     logger.info("Using Google AI Studio path")
     return ChatGoogleGenerativeAI(google_api_key=settings.gemini_api_key, **common)
+
+
+def build_llm_with_region_fallback(
+    model_name: str, **kwargs: Any
+) -> Runnable[LanguageModelInput, BaseMessage]:
+    """
+    Regional-primary, global-fallback LLM for direct ``.invoke()`` call sites.
+
+    The raw ``genai`` path already retries a 404 on the global endpoint
+    (app/services/genai_calls.py); the LangChain path pinned itself to
+    ``settings.gcp_region`` and had no equivalent, so a global-only model
+    selected in the UI would 404 here while working on the raw path.
+
+    Returns a plain ``ChatGoogleGenerativeAI`` on the AI Studio dev path, which
+    has no regions. Agent construction deliberately keeps using ``build_llm``:
+    ``create_agent`` wants a concrete chat model, not a composed Runnable.
+    """
+    primary = build_llm(model_name, **kwargs)
+
+    if getattr(primary, "location", None) != settings.gcp_region:
+        return primary
+
+    fallback = build_llm(model_name, location="global", **kwargs)
+    return primary.with_fallbacks([fallback], exceptions_to_handle=_REGION_FALLBACK_EXCEPTIONS)

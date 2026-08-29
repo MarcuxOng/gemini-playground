@@ -259,7 +259,10 @@ def test_gemini_stop_sequences_and_system_instruction(client: TestClient, auth_h
 
 def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_headers, mock_gemini_client_global):
     """With no attachments/native_tools/cache_id/stop_sequences/system_instruction present,
-    sampling params should route through build_llm() (LangChain path), not the raw client."""
+    sampling params should route through the LangChain path, not the raw client.
+
+    That path builds via build_llm_with_region_fallback() so a global-only model
+    still resolves (F9); the sampling kwargs are forwarded through it unchanged."""
     import app.services.gemini as gemini_module
 
     response = client.post(
@@ -278,7 +281,7 @@ def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_head
 
     assert response.status_code == 200
 
-    call_kwargs = gemini_module.build_llm.call_args.kwargs
+    call_kwargs = gemini_module.build_llm_with_region_fallback.call_args.kwargs
     assert call_kwargs["temperature"] == 0.9
     assert call_kwargs["top_p"] == 0.8
     assert call_kwargs["top_k"] == 20
@@ -409,7 +412,7 @@ async def test_gemini_stream_sampling_params(client: TestClient, auth_headers, m
 # --- Regional/global fallback (models only served from one Vertex endpoint) ---
 
 def test_gemini_falls_back_to_global_on_regional_404(client: TestClient, auth_headers, mock_gemini_client_global):
-    import app.services.gemini as gemini_module
+    import app.services.genai_calls as genai_calls_module
 
     mock_gemini_client_global.models.generate_content.reset_mock(side_effect=True)
     mock_gemini_client_global.models.generate_content.side_effect = errors.ClientError(
@@ -425,7 +428,7 @@ def test_gemini_falls_back_to_global_on_regional_404(client: TestClient, auth_he
     mock_global_client.models.generate_content.return_value = mock_global_response
 
     try:
-        with patch.object(gemini_module, "global_client", mock_global_client):
+        with patch.object(genai_calls_module, "global_client", mock_global_client):
             response = client.post(
                 "/api/v1/gemini/",
                 json={
@@ -447,7 +450,7 @@ def test_gemini_falls_back_to_global_on_regional_404(client: TestClient, auth_he
 
 
 def test_gemini_raw_client_non_404_error_does_not_fall_back(client: TestClient, auth_headers, mock_gemini_client_global):
-    import app.services.gemini as gemini_module
+    import app.services.genai_calls as genai_calls_module
 
     mock_gemini_client_global.models.generate_content.reset_mock(side_effect=True)
     mock_gemini_client_global.models.generate_content.side_effect = errors.ClientError(
@@ -457,7 +460,7 @@ def test_gemini_raw_client_non_404_error_does_not_fall_back(client: TestClient, 
     mock_global_client = MagicMock()
 
     try:
-        with patch.object(gemini_module, "global_client", mock_global_client):
+        with patch.object(genai_calls_module, "global_client", mock_global_client):
             # Non-404 errors propagate unhandled (matching production behavior), not a clean 500 response.
             with pytest.raises(errors.ClientError) as exc_info:
                 client.post(
@@ -478,7 +481,7 @@ def test_gemini_raw_client_non_404_error_does_not_fall_back(client: TestClient, 
 
 @pytest.mark.asyncio
 async def test_gemini_stream_falls_back_to_global_on_regional_404(client: TestClient, auth_headers, mock_gemini_client_global):
-    import app.services.gemini as gemini_module
+    import app.services.genai_calls as genai_calls_module
 
     mock_aio = MagicMock()
     mock_gemini_client_global.aio = mock_aio
@@ -500,7 +503,7 @@ async def test_gemini_stream_falls_back_to_global_on_regional_404(client: TestCl
     mock_global_client.aio.models.generate_content_stream = mock_global_generate
     mock_global_generate.return_value = mock_global_stream_gen()
 
-    with patch.object(gemini_module, "global_client", mock_global_client):
+    with patch.object(genai_calls_module, "global_client", mock_global_client):
         response = client.post(
             "/api/v1/gemini/stream",
             json={"model": "gemini-3.5-flash", "prompt": "Stream this"},

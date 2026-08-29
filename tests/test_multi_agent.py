@@ -306,8 +306,8 @@ class TestConsensusEndpoint:
     def test_consensus_accepts_custom_models(self, client: TestClient, auth_headers, mock_gemini_client_global):
         import app.services.gemini as gemini_svc
 
-        # Snapshot build_llm call count to isolate this test
-        build_llm_before = gemini_svc.build_llm.call_count
+        # Snapshot the builder call count to isolate this test
+        build_llm_before = gemini_svc.build_llm_with_region_fallback.call_count
 
         with self._patch_judge_response(mock_gemini_client_global) as patched_gen:
             resp = client.post(
@@ -322,9 +322,11 @@ class TestConsensusEndpoint:
             )
         assert resp.status_code == 200
 
-        # Workers run via gemini_service → build_llm(model).invoke().
-        # Verify the 2 workers each called build_llm with the worker model.
-        worker_calls = gemini_svc.build_llm.call_args_list[build_llm_before:]
+        # Workers run via gemini_service → build_llm_with_region_fallback(model).invoke().
+        # Verify the 2 workers each built an LLM for the worker model.
+        worker_calls = gemini_svc.build_llm_with_region_fallback.call_args_list[
+            build_llm_before:
+        ]
         assert len(worker_calls) == 2
         for call in worker_calls:
             assert call[0][0] == "gemini-2.5-flash", f"worker model mismatch: {call[0]}"

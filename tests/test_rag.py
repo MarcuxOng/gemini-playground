@@ -445,7 +445,7 @@ def test_query_service_falls_back_to_global_on_regional_404(mock_gemini_client_g
     from google.genai import errors
     from langchain_core.documents import Document
 
-    import app.services.gemini as gemini_module
+    import app.services.genai_calls as genai_calls_module
     from app.services.rag import query_service
 
     file_docs = [
@@ -475,7 +475,7 @@ def test_query_service_falls_back_to_global_on_regional_404(mock_gemini_client_g
     try:
         with (
             patch("app.services.rag.search_documents", return_value=file_docs),
-            patch.object(gemini_module, "global_client", mock_global_client),
+            patch.object(genai_calls_module, "global_client", mock_global_client),
         ):
             result = query_service("what is in the image?", "gemini-3.5-flash", owner_id="user-a")
     finally:

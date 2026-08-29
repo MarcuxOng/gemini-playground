@@ -118,6 +118,20 @@ def build_global_client() -> genai.Client:
     return genai.Client(vertexai=True, project=settings.gcp_project_id, location="global")
 
 
+def build_vertex_client() -> genai.Client:
+    """
+    Client pinned to Vertex AI, with no Developer-API fallback.
+
+    GCS (``gs://``) URIs are readable only through Vertex — the Developer API
+    client cannot resolve them — so the GCS read path must not take the
+    local-dev fallback that build_genai_client() applies. Callers are
+    responsible for checking settings.gcp_project_id first.
+    """
+    return genai.Client(
+        vertexai=True, project=settings.gcp_project_id, location=settings.gcp_region
+    )
+
+
 client = build_genai_client()
 global_client = build_global_client()
 default_model = settings.gemini_default_model
