@@ -9,6 +9,13 @@ import os
 # hit this because it has no .env file.
 os.environ["REDIS_URL"] = "memory://"
 
+# Same failure mode, different setting: app/database/db.py builds its engine at
+# import time from settings.database_url, so the `client` fixture's Settings
+# override never reaches it. Without this line the suite reads *and writes* the
+# developer's real local database, and tests silently depend on whatever rows
+# happen to be sitting in it.
+os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from unittest.mock import MagicMock, patch  # noqa: E402
@@ -24,13 +31,40 @@ def mock_observability():
         yield
 
 
+# Attachment that tests reference by a fixed ID. It used to be an ambient row in
+# the developer's local database; seeding it here makes the suite self-contained.
+SEEDED_FILE_ID = "00000000-0000-0000-0000-000000000001"
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_database():
     # Initialize the database tables once for the test session
     Base.metadata.create_all(bind=engine)
+
+    from app.database.db import SessionLocal
+    from app.database.models import APIKey, UploadedFile
+
+    db = SessionLocal()
+    try:
+        if db.get(APIKey, "master") is None:
+            db.add(APIKey(id="master", name="Master Key", hashed_key="seeded-master"))
+        if db.get(UploadedFile, SEEDED_FILE_ID) is None:
+            db.add(
+                UploadedFile(
+                    id=SEEDED_FILE_ID,
+                    gemini_file_name="files/seeded",
+                    gemini_file_uri="https://generativelanguage.googleapis.com/v1beta/files/seeded",
+                    mime_type="application/pdf",
+                    size_bytes=1024,
+                    display_name="seeded.pdf",
+                    owner_id="master",
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
     yield
-    # Optional: Drop tables after session if needed
-    # Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture(scope="session", autouse=True)
