@@ -343,6 +343,8 @@ def _build_contents(
     contents: list[Any] = []
     if attachments and db and owner_id:
         resolved = resolve_attachments(attachments, db, owner_id)
+        if len(resolved) != len(attachments):
+            raise ValueError("one or more attachments were not found or are not accessible")
         for att in resolved:
             contents.append(types.Part.from_uri(file_uri=att["uri"], mime_type=att["mime_type"]))
     contents.append(prompt)
