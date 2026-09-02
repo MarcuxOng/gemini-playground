@@ -16,12 +16,16 @@ os.environ["REDIS_URL"] = "memory://"
 # happen to be sitting in it.
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 
+from unittest.mock import MagicMock, patch  # noqa: E402
+
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from unittest.mock import MagicMock, patch  # noqa: E402
+from langchain_core.messages import AIMessage  # noqa: E402
+
 from app.app import app  # noqa: E402
 from app.config import Settings, get_settings  # noqa: E402
-from app.database.db import Base, engine  # noqa: E402
+from app.database.db import Base, SessionLocal, engine  # noqa: E402
+from app.database.models import APIKey, UploadedFile  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -35,19 +39,29 @@ def mock_observability():
 # the developer's local database; seeding it here makes the suite self-contained.
 SEEDED_FILE_ID = "00000000-0000-0000-0000-000000000001"
 
+# Two real, non-master API keys. Every ownership filter is written
+# `if api_key.id != "master"`, so a suite that only ever authenticates as master
+# exercises the bypass and never the filter -- which is how the 2026-08-30 cache
+# leak stayed invisible. T6's regression test needs two distinct owners.
+SEEDED_OWNER_ID = "00000000-0000-0000-0000-0000000000aa"
+SEEDED_OTHER_OWNER_ID = "00000000-0000-0000-0000-0000000000bb"
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_database():
     # Initialize the database tables once for the test session
     Base.metadata.create_all(bind=engine)
 
-    from app.database.db import SessionLocal
-    from app.database.models import APIKey, UploadedFile
-
     db = SessionLocal()
     try:
         if db.get(APIKey, "master") is None:
             db.add(APIKey(id="master", name="Master Key", hashed_key="seeded-master"))
+        for owner_id, label in (
+            (SEEDED_OWNER_ID, "Delegated Owner"),
+            (SEEDED_OTHER_OWNER_ID, "Other Owner"),
+        ):
+            if db.get(APIKey, owner_id) is None:
+                db.add(APIKey(id=owner_id, name=label, hashed_key=f"seeded-{owner_id}"))
         if db.get(UploadedFile, SEEDED_FILE_ID) is None:
             db.add(
                 UploadedFile(
@@ -70,8 +84,6 @@ def setup_database():
 @pytest.fixture(scope="session", autouse=True)
 def mock_gemini_client_global():
     """Globally mock the Gemini client and LangChain LLM to prevent real API calls."""
-    from langchain_core.messages import AIMessage
-
     mock_client = MagicMock()
     mock_client.models.list_models.return_value = []
     mock_response = MagicMock()
@@ -139,3 +151,15 @@ def auth_headers():
 @pytest.fixture(scope="session")
 def internal_auth_headers():
     return {"x-internal-key": "test-internal-key"}
+
+
+@pytest.fixture(scope="session")
+def delegated_owner_id():
+    """A real, non-master owner for delegated (x-internal-key) invocations."""
+    return SEEDED_OWNER_ID
+
+
+@pytest.fixture(scope="session")
+def other_owner_id():
+    """A second real owner, for asserting one owner cannot reach another's resources."""
+    return SEEDED_OTHER_OWNER_ID

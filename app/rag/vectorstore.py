@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from langchain_core.documents import Document
+from langchain_core.runnables import RunnableLambda
 from pinecone import Pinecone
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,4 @@ class Retriever:
         return self.store.similarity_search(query, k=self.kwargs.get("k", 5))
 
     def __or__(self, other: Any) -> Any:
-        from langchain_core.runnables import RunnableLambda
-
         return RunnableLambda(self.invoke) | other
