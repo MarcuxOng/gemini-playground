@@ -74,6 +74,7 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Database
+database/
 *.db
 *.db-shm
 *.db-wal
@@ -89,16 +90,8 @@ pip-delete-this-directory.txt
 Thumbs.db
 
 # Project specific
-.misc/
 .claude/
-.gemini/
-.agents/
-skills/
-conductor/
 *CLAUDE.md
-*AGENT.md
-*GEMINI.md
-*.geminiignore
 
 # mypy
 .mypy_cache/
