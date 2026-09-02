@@ -13,6 +13,11 @@ from app.database.models import APIKey
 
 logger = logging.getLogger(__name__)
 
+# The identity every ownership filter is written to skip (`if api_key.id != "master"`).
+# Named here because this module is what mints it. The filters themselves still spell it
+# literally; unifying them across the routers belongs to T7.
+MASTER_KEY_ID = "master"
+
 
 def hash_api_key(api_key: str) -> str:
     """Hash an API key using SHA-256 for secure DB lookup."""
@@ -56,8 +61,8 @@ async def verify_api_key(
 
     # 1. Check Master Key
     if settings.master_api_key and secrets.compare_digest(x_api_key, settings.master_api_key):
-        request.state.api_key_id = "master"
-        return APIKey(id="master", name="Master Key")
+        request.state.api_key_id = MASTER_KEY_ID
+        return APIKey(id=MASTER_KEY_ID, name="Master Key")
 
     # 2. Check Database Keys
     hashed = hash_api_key(x_api_key)
@@ -92,7 +97,7 @@ async def verify_master_key(
             detail="Forbidden: Administrative privileges required.",
         )
 
-    request.state.api_key_id = "master"
+    request.state.api_key_id = MASTER_KEY_ID
 
 
 async def verify_internal_key(
@@ -111,3 +116,36 @@ async def verify_internal_key(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: Internal access only.",
         )
+
+
+def resolve_delegated_key(db: Session, key_id: str) -> APIKey:
+    """
+    Resolve the owner identity a server-to-server call is acting for.
+
+    The internal key authenticates the calling *server*; it does not name a *user*.
+    Callers therefore have to say whose data they are touching, and this returns the
+    real ``APIKey`` row for that owner so every ownership filter downstream applies
+    normally.
+
+    The master identity is refused outright: it is the one id the filters are written
+    to skip, so honouring it here would reinstate the blanket bypass this resolution
+    exists to remove (T6).
+    """
+    if key_id == MASTER_KEY_ID:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot act on behalf of the master identity.",
+        )
+
+    api_key_record = (
+        db.query(APIKey).filter(APIKey.id == key_id, APIKey.is_active.is_(True)).first()
+    )
+
+    if not api_key_record:
+        logger.warning("Delegated invocation refused: unknown or inactive owner.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unknown or inactive owner for delegated invocation.",
+        )
+
+    return api_key_record
