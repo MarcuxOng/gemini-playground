@@ -303,7 +303,7 @@ def test_embedding_model_default_dev_is_gemini_embedding_2():
     from app.config import Settings
 
     s = Settings(
-        database_url="sqlite:///./test.db",
+        database_url="sqlite:///database/test.db",
         master_api_key="test-key",
         gemini_api_key="test-key",
         gcp_project_id="test-project",
@@ -323,7 +323,7 @@ def test_embedding_model_explicit_overrides_env(monkeypatch):
     from app.config import Settings
 
     s = Settings(
-        database_url="sqlite:///./test.db",
+        database_url="sqlite:///database/test.db",
         master_api_key="test-key",
         gemini_api_key="test-key",
         gcp_project_id="test-project",

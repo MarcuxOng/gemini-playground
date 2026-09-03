@@ -14,7 +14,7 @@ os.environ["REDIS_URL"] = "memory://"
 # override never reaches it. Without this line the suite reads *and writes* the
 # developer's real local database, and tests silently depend on whatever rows
 # happen to be sitting in it.
-os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+os.environ["DATABASE_URL"] = "sqlite:///database/test.db"
 
 from unittest.mock import MagicMock, patch  # noqa: E402
 
@@ -131,7 +131,7 @@ def mock_health_pinecone():
 def client():
     # Define test settings with dummy values
     test_settings = Settings(
-        database_url="sqlite:///./test.db",
+        database_url="sqlite:///database/test.db",
         master_api_key="test-master-key",
         internal_api_key="test-internal-key",
         gemini_api_key="test-key",
