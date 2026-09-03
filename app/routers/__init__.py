@@ -6,6 +6,7 @@ from app.routers.caches import router as caches_router
 from app.routers.evals import router as evals_router
 from app.routers.files import router as files_router
 from app.routers.gemini import router as gemini_router
+from app.routers.health import router as health_router
 from app.routers.mcp_server import router as mcp_server_router
 from app.routers.multi_agent import router as multi_agent_router
 from app.routers.rag import router as rag_router
@@ -22,4 +23,5 @@ all_routers = [
     rag_router,
     evals_router,
     mcp_server_router,
+    health_router,
 ]

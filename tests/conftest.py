@@ -106,6 +106,7 @@ def mock_gemini_client_global():
         patch("app.services.genai_calls.client", mock_client),
         patch("app.services.genai_calls.global_client", mock_client),
         patch("app.services.caches.client", mock_client),
+        patch("app.services.health.client", mock_client),
         patch("app.services.gemini.build_llm", return_value=mock_llm_instance),
         # Direct .invoke() sites use the regional/global fallback wrapper (F9).
         patch(
@@ -117,6 +118,13 @@ def mock_gemini_client_global():
         patch("app.services.agents.get_checkpointer", return_value=None),
     ):
         yield mock_client
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_health_pinecone():
+    """`/api/v1/health` probes Pinecone directly — keep the suite off the network."""
+    with patch("app.services.health.Pinecone", MagicMock()):
+        yield
 
 
 @pytest.fixture(scope="session")
