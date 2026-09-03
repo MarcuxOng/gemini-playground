@@ -13,11 +13,11 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# failure posture when the rate-limit store is unreachable: degrade to per-instance 
-# in-memory counters. Not fail-open, which would leave no ceiling on paid Gemini calls 
-# during an outage; not a 503, which keeps the store's availability as a hard veto over 
-# the surface Option B makes the product. The cost is that counters stop being shared, 
-# so N instances allow N x the intended limit — a weaker guarantee, and only while the 
+# failure posture when the rate-limit store is unreachable: degrade to per-instance
+# in-memory counters. Not fail-open, which would leave no ceiling on paid Gemini calls
+# during an outage; not a 503, which keeps the store's availability as a hard veto over
+# the surface Option B makes the product. The cost is that counters stop being shared,
+# so N instances allow N x the intended limit — a weaker guarantee, and only while the
 # primary store is down.
 #
 # There are three rate-limit call sites and they all run this posture. The HTTP routes
