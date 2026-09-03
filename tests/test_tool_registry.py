@@ -14,11 +14,11 @@ def _params(tool_name: str) -> dict:
 
 
 def test_int_parameter_is_declared_as_integer():
-    assert _params("read_file")["max_chars"]["type"] == "integer"
+    assert _params("count_tokens")["max_tokens"]["type"] == "integer"
 
 
 def test_str_parameter_is_still_a_string():
-    assert _params("read_file")["path"]["type"] == "string"
+    assert _params("count_tokens")["text"]["type"] == "string"
 
 
 def test_no_tool_silently_declares_everything_as_string():
@@ -33,6 +33,6 @@ def test_no_tool_silently_declares_everything_as_string():
 
 
 def test_required_parameters_exclude_defaults():
-    schema = get_registry()["read_file"]["schema"]["function"]["parameters"]
-    assert "path" in schema["required"]
-    assert "max_chars" not in schema["required"]
+    schema = get_registry()["count_tokens"]["schema"]["function"]["parameters"]
+    assert "text" in schema["required"]
+    assert "max_tokens" not in schema["required"]

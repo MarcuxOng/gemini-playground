@@ -30,8 +30,6 @@ Guidelines:
 
 TOOLS = [
     "calculate",
-    "read_file",
-    "write_file",
     "test_regex",
     "count_tokens",
 ]
