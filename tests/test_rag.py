@@ -5,13 +5,15 @@ from fastapi.testclient import TestClient
 
 
 def test_rag_query_returns_401_without_auth(client: TestClient):
+    # The router carries `dependencies=[Depends(verify_api_key)]`, so a missing key is
+    # rejected before the body is ever validated — 401, never 422 and never 404.
     response = client.post("/api/v1/rag/query", json={"query": "test"})
-    assert response.status_code in [401, 404, 422]
+    assert response.status_code == 401
 
 
 def test_rag_ingest_returns_401_without_auth(client: TestClient):
     response = client.post("/api/v1/rag/ingest", json={"text": "test document"})
-    assert response.status_code in [401, 404, 422]
+    assert response.status_code == 401
 
 
 def test_ingest_forwards_owner_id(client: TestClient, auth_headers: dict):
@@ -440,50 +442,8 @@ def test_search_documents_returns_multimodal_metadata():
     assert results[0].metadata["source_type"] == "multimodal"
 
 
-def test_query_service_falls_back_to_global_on_regional_404(mock_gemini_client_global: MagicMock):
-    """Multimodal RAG query (raw-client path) retries on global when the model 404s regionally."""
-    from google.genai import errors
-    from langchain_core.documents import Document
-
-    import app.services.genai_calls as genai_calls_module
-    from app.services.rag import query_service
-
-    file_docs = [
-        Document(
-            page_content="",
-            metadata={
-                "gemini_file_uri": "https://example.com/files/img1",
-                "mime_type": "image/png",
-                "display_name": "screenshot.png",
-            },
-        ),
-    ]
-
-    mock_gemini_client_global.models.generate_content.reset_mock(side_effect=True)
-    mock_gemini_client_global.models.generate_content.side_effect = errors.ClientError(
-        404,
-        {"error": {"code": 404, "status": "NOT_FOUND", "message": "Publisher model not found in region"}},
-    )
-
-    mock_global_response = MagicMock()
-    mock_global_response.text = "Answer from the global endpoint."
-    mock_global_response.candidates = []
-    mock_global_response.prompt_feedback = None
-    mock_global_client = MagicMock()
-    mock_global_client.models.generate_content.return_value = mock_global_response
-
-    try:
-        with (
-            patch("app.services.rag.search_documents", return_value=file_docs),
-            patch.object(genai_calls_module, "global_client", mock_global_client),
-        ):
-            result = query_service("what is in the image?", "gemini-3.5-flash", owner_id="user-a")
-    finally:
-        # Shared session-scoped mock — clear side_effect so it doesn't leak into other tests.
-        mock_gemini_client_global.models.generate_content.side_effect = None
-
-    assert result == "Answer from the global endpoint."
-    mock_global_client.models.generate_content.assert_called_once()
+# `test_query_service_falls_back_to_global_on_regional_404` moved to
+# tests/test_region_fallback.py, alongside the other three call paths.
 
 
 def test_text_only_query_returns_the_answer_not_the_message_repr():
