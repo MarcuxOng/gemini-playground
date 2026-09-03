@@ -171,3 +171,45 @@ def delegated_owner_id():
 def other_owner_id():
     """A second real owner, for asserting one owner cannot reach another's resources."""
     return SEEDED_OTHER_OWNER_ID
+
+
+@pytest.fixture()
+def gemini_caches(mock_gemini_client_global):
+    """A MagicMock caches service attached to the global Gemini client.
+
+    Each test gets a fresh mock.  Replaces the repeated
+    ``mock_caches = MagicMock(); mock_gemini_client_global.caches = mock_caches``
+    pattern that appeared in every cache-related test file.
+    """
+    mock_caches = MagicMock()
+    mock_gemini_client_global.caches = mock_caches
+    return mock_caches
+
+
+@pytest.fixture()
+def make_gemini_cache():
+    """Factory fixture: returns a MagicMock with the six attributes every Gemini cache mock needs.
+
+    Usage::
+
+        cache = make_gemini_cache(name="cachedContents/abc123", display_name="my-cache")
+    """
+
+    def _make(
+        name: str = "cachedContents/test-cache",
+        model: str = "gemini-2.5-flash",
+        display_name: str = "test-cache",
+        ttl=None,
+        create_time=None,
+        expire_time=None,
+    ):
+        cache = MagicMock()
+        cache.name = name
+        cache.model = model
+        cache.display_name = display_name
+        cache.ttl = ttl
+        cache.create_time = create_time
+        cache.expire_time = expire_time
+        return cache
+
+    return _make

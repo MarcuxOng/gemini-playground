@@ -4,20 +4,12 @@ from langchain_core.messages import AIMessage
 
 
 class TestSharedContext:
-    def test_create_returns_shared_context(self, mock_gemini_client_global):
+    def test_create_returns_shared_context(self, gemini_caches, make_gemini_cache):
         from app.multi_agent.shared_context import SharedContext
 
-        mock_caches = MagicMock()
-        mock_gemini_client_global.caches = mock_caches
-
-        mock_cache = MagicMock()
-        mock_cache.name = "cachedContents/shared-001"
-        mock_cache.model = "gemini-2.5-flash"
-        mock_cache.display_name = "shared-context"
-        mock_cache.ttl = "3600s"
-        mock_cache.create_time = None
-        mock_cache.expire_time = None
-        mock_caches.create.return_value = mock_cache
+        gemini_caches.create.return_value = make_gemini_cache(
+            name="cachedContents/shared-001", display_name="shared-context", ttl="3600s"
+        )
 
         ctx = SharedContext.create(
             model="gemini-2.5-flash",
@@ -31,45 +23,33 @@ class TestSharedContext:
         assert ctx.ttl_seconds == 3600
         assert ctx.model == "gemini-2.5-flash"
 
-    def test_refresh_updates_ttl(self, mock_gemini_client_global):
+    def test_refresh_updates_ttl(self, gemini_caches, make_gemini_cache):
         from app.multi_agent.shared_context import SharedContext
 
-        mock_caches = MagicMock()
-        mock_gemini_client_global.caches = mock_caches
-
-        mock_cache = MagicMock()
-        mock_cache.name = "cachedContents/shared-002"
-        mock_cache.model = "gemini-2.5-flash"
-        mock_cache.display_name = "test"
-        mock_cache.ttl = "7200s"
-        mock_cache.create_time = None
-        mock_cache.expire_time = None
-        mock_caches.update.return_value = mock_cache
+        gemini_caches.update.return_value = make_gemini_cache(
+            name="cachedContents/shared-002", ttl="7200s"
+        )
 
         ctx = SharedContext(cache_id="cachedContents/shared-002", ttl_seconds=7200)
         result = ctx.refresh()
 
         assert result["cache_id"] == "cachedContents/shared-002"
-        mock_caches.update.assert_called_once()
+        gemini_caches.update.assert_called_once()
 
-    def test_invalidate_deletes_cache(self, mock_gemini_client_global):
+    def test_invalidate_deletes_cache(self, gemini_caches):
         from app.multi_agent.shared_context import SharedContext
-
-        mock_caches = MagicMock()
-        mock_gemini_client_global.caches = mock_caches
 
         ctx = SharedContext(cache_id="cachedContents/shared-003")
         ctx.invalidate()
 
-        mock_caches.delete.assert_called_once_with(name="cachedContents/shared-003")
+        gemini_caches.delete.assert_called_once_with(name="cachedContents/shared-003")
 
-    def test_start_refresh_loop_starts_background_task(self, mock_gemini_client_global):
+    def test_start_refresh_loop_starts_background_task(self, gemini_caches, make_gemini_cache):
         import asyncio
+
         from app.multi_agent.shared_context import SharedContext
 
-        mock_caches = MagicMock()
-        mock_gemini_client_global.caches = mock_caches
-        mock_caches.update.return_value = MagicMock(ttl="3600s")
+        gemini_caches.update.return_value = make_gemini_cache(ttl="3600s")
 
         ctx = SharedContext(cache_id="cachedContents/shared-004", ttl_seconds=5)
 
@@ -80,7 +60,7 @@ class TestSharedContext:
 
         asyncio.run(_run())
 
-    def test_stop_refresh_is_safe_when_not_running(self, mock_gemini_client_global):
+    def test_stop_refresh_is_safe_when_not_running(self):
         from app.multi_agent.shared_context import SharedContext
 
         ctx = SharedContext(cache_id="cachedContents/shared-005")
