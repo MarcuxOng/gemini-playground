@@ -20,9 +20,8 @@ def test_mcp_rate_limit_returns_429_when_exceeded(client: TestClient):
     # Patch both auth and the rate limiter so we isolate the rate-limit behaviour
     with (
         patch("app.mcp.server.check_api_key", return_value=True),
-        patch("app.mcp.server._mcp_rate_limiter") as mock_limiter,
+        patch("app.mcp.server.limiter_hit", return_value=False),
     ):
-        mock_limiter.hit.return_value = False
         response = client.get(
             "/mcp/sse",
             headers={"x-api-key": "test-master-key"},

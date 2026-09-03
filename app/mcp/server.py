@@ -10,17 +10,15 @@ import logging
 
 from fastmcp import FastMCP
 from limits import parse as parse_limit
-from limits.storage import storage_from_string
-from limits.strategies import FixedWindowRateLimiter
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
-from app.config import settings
 from app.database.db import SessionLocal
 from app.tools import get_registry
 from app.utils.auth import check_api_key
+from app.utils.limiter import limiter_hit
 
 logger = logging.getLogger(__name__)
 mcp = FastMCP(
@@ -28,7 +26,6 @@ mcp = FastMCP(
 )
 
 _mcp_rate_limit = parse_limit("60/minute")
-_mcp_rate_limiter = FixedWindowRateLimiter(storage_from_string(settings.redis_url or "memory://"))
 
 
 class MCPAuthMiddleware(BaseHTTPMiddleware):
@@ -44,7 +41,10 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
                 client_ip = request.client.host
             else:
                 client_ip = "unknown"
-            if not _mcp_rate_limiter.hit(_mcp_rate_limit, "mcp", client_ip):
+            # Degrades to in-memory counters rather than 500ing if the store is
+            # down (Decision 1). This gate runs before the API key check, so an
+            # unhandled storage error here would close the MCP surface entirely.
+            if not limiter_hit(_mcp_rate_limit, "mcp", client_ip):
                 return JSONResponse(
                     {"error": "Rate limit exceeded. Max 60 requests/minute per IP."},
                     status_code=429,
