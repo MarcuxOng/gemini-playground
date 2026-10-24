@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -41,11 +41,10 @@ class ProviderInput(BaseRequestModel):
     max_output_tokens: int | None = Field(default=None, ge=1)
     stop_sequences: list[str] = Field(default=[], max_length=5)
     system_instruction: str | None = Field(default=None, max_length=4_000)
-    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
-    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
-    top_k: int | None = Field(default=None, ge=1)
     seed: int | None = None
-    thinking_budget: int | None = Field(default=None, ge=-1)
+    thinking_level: Literal["minimal", "low", "medium", "high"] | None = None
+
+    model_config = ConfigDict(extra="forbid")  # deprecated sampling params must 422, not be ignored
 
     @field_validator("attachments")
     @classmethod
@@ -97,11 +96,8 @@ async def gemini(
         max_output_tokens=body.max_output_tokens,
         stop_sequences=body.stop_sequences,
         system_instruction=body.system_instruction,
-        temperature=body.temperature,
-        top_p=body.top_p,
-        top_k=body.top_k,
         seed=body.seed,
-        thinking_budget=body.thinking_budget,
+        thinking_level=body.thinking_level,
     )
 
     return APIResponse(data=response)
@@ -159,11 +155,8 @@ async def gemini_stream(
                 max_output_tokens=body.max_output_tokens,
                 stop_sequences=body.stop_sequences,
                 system_instruction=body.system_instruction,
-                temperature=body.temperature,
-                top_p=body.top_p,
-                top_k=body.top_k,
                 seed=body.seed,
-                thinking_budget=body.thinking_budget,
+                thinking_level=body.thinking_level,
             ):
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'thread_id': None})}\n\n"

@@ -364,11 +364,8 @@ def _build_generate_config(
     max_tokens: int | None = None,
     stop_sequences: list[str] | None = None,
     system_instruction: str | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    top_k: int | None = None,
     seed: int | None = None,
-    thinking_budget: int | None = None,
+    thinking_level: str | None = None,
 ) -> types.GenerateContentConfig:
     """Assemble the raw-client request config shared by the sync and streaming paths."""
     tools_config = None
@@ -388,6 +385,8 @@ def _build_generate_config(
         )
         tools_config = None
 
+    # temperature/top_p/top_k are deprecated (rejected by upcoming Gemini models);
+    # thinking_level replaces thinking_budget.
     return types.GenerateContentConfig(
         tools=tools_config,
         safety_settings=SAFETY_SETTINGS,
@@ -395,12 +394,9 @@ def _build_generate_config(
         max_output_tokens=max_tokens,
         stop_sequences=stop_sequences or None,
         system_instruction=system_instruction,
-        temperature=temperature,
-        top_p=top_p,
-        top_k=top_k,
         seed=seed,
-        thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget)
-        if thinking_budget is not None
+        thinking_config=types.ThinkingConfig(thinking_level=thinking_level)
+        if thinking_level is not None
         else None,
     )
 
@@ -417,16 +413,13 @@ def gemini_service(
     max_output_tokens: int | None = None,
     stop_sequences: list[str] | None = None,
     system_instruction: str | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    top_k: int | None = None,
     seed: int | None = None,
-    thinking_budget: int | None = None,
+    thinking_level: str | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
     Reaches for raw genai.Client only when attachments or native_tools are present since LangChain's Files API integration or native tools is less direct.
-    Sampling params (temperature/top_p/top_k/seed/thinking_budget) are supported on both paths and don't force the raw-client branch.
+    Sampling params (seed/thinking_level) are supported on both paths and don't force the raw-client branch; temperature/top_p/top_k are deprecated by Gemini and not accepted.
     """
     if max_output_tokens is not None and max_output_tokens < 1:
         raise ValueError(f"max_output_tokens must be >= 1, got {max_output_tokens}")
@@ -452,11 +445,8 @@ def gemini_service(
                 max_tokens=max_tokens,
                 stop_sequences=stop_sequences,
                 system_instruction=system_instruction,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
                 seed=seed,
-                thinking_budget=thinking_budget,
+                thinking_level=thinking_level,
             )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
@@ -488,11 +478,8 @@ def gemini_service(
             llm = build_llm_with_region_fallback(
                 model,
                 max_output_tokens=max_tokens,
-                temperature=temperature if temperature is not None else 0.1,
-                top_p=top_p,
-                top_k=top_k,
                 seed=seed,
-                thinking_budget=thinking_budget,
+                thinking_level=thinking_level,
             )
             llm_response = llm.invoke(prompt)
             _set_request_tokens(fastapi_request, getattr(llm_response, "usage_metadata", None))
@@ -588,11 +575,8 @@ async def gemini_stream_service(
     max_output_tokens: int | None = None,
     stop_sequences: list[str] | None = None,
     system_instruction: str | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    top_k: int | None = None,
     seed: int | None = None,
-    thinking_budget: int | None = None,
+    thinking_level: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     max_tokens = max_output_tokens if max_output_tokens is not None else default_max_tokens
@@ -613,11 +597,8 @@ async def gemini_stream_service(
             max_tokens=max_tokens,
             stop_sequences=stop_sequences,
             system_instruction=system_instruction,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
             seed=seed,
-            thinking_budget=thinking_budget,
+            thinking_level=thinking_level,
         )
 
         response = await generate_content_stream_with_fallback(

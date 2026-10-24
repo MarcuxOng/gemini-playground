@@ -26,13 +26,10 @@ _REGION_FALLBACK_EXCEPTIONS: tuple[type[BaseException], ...] = (NotFound,)
 
 def build_llm(
     model_name: str,
-    temperature: float = 0.1,
     cached_content: str | None = None,
     max_output_tokens: int | None = None,
-    top_p: float | None = None,
-    top_k: int | None = None,
     seed: int | None = None,
-    thinking_budget: int | None = None,
+    thinking_level: str | None = None,
     location: str | None = None,
 ) -> ChatGoogleGenerativeAI:
     """Builds a Gemini LLM via ChatGoogleGenerativeAI (Vertex AI prod, AI Studio dev).
@@ -40,26 +37,26 @@ def build_llm(
     *location* overrides the Vertex endpoint region; it is ignored on the AI
     Studio dev path, which is not region-scoped. Pass ``"global"`` to reach
     models that only serve from the global endpoint.
+
+    Sampling params (temperature/top_p/top_k) are deprecated and rejected by
+    upcoming Gemini models, so they are deliberately not accepted here — the
+    model's own default sampling is used. ``thinking_level`` is the
+    ``thinking_budget`` replacement ("minimal"|"low"|"medium"|"high").
     """
     logger.info(f"Building Gemini LLM: {model_name}")
 
     common: dict[str, Any] = {
         "model": model_name,
-        "temperature": temperature,
         "safety_settings": LANGCHAIN_SAFETY_SETTINGS,
     }
     if cached_content:
         common["cached_content"] = cached_content
     if max_output_tokens is not None:
         common["max_output_tokens"] = max_output_tokens
-    if top_p is not None:
-        common["top_p"] = top_p
-    if top_k is not None:
-        common["top_k"] = top_k
     if seed is not None:
         common["seed"] = seed
-    if thinking_budget is not None:
-        common["thinking_budget"] = thinking_budget
+    if thinking_level is not None:
+        common["thinking_level"] = thinking_level
 
     project_id: str | None = None
     if settings.gcp_project_id:

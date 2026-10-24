@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from google.genai import errors
+from google.genai import errors, types
 
 # --- Model name validation ---
 
@@ -38,12 +38,13 @@ def test_gemini_accepts_valid_model_names(client: TestClient, auth_headers, mock
 
 
 @pytest.mark.parametrize("bad_field,bad_value", [
-    ("temperature", 2.1),
-    ("temperature", -0.1),
-    ("top_p", 1.1),
-    ("top_p", -0.1),
-    ("top_k", 0),
-    ("thinking_budget", -2),
+    ("thinking_level", "maximal"),
+    ("thinking_level", 42),
+    # removed-but-still-sent deprecated params must be rejected, not silently ignored
+    ("thinking_budget", 1024),
+    ("temperature", 0.7),
+    ("top_p", 0.9),
+    ("top_k", 20),
 ])
 def test_gemini_rejects_out_of_range_sampling_params(client: TestClient, auth_headers, bad_field: str, bad_value: float):
     response = client.post(
@@ -270,11 +271,8 @@ def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_head
         json={
             "model": "gemini-2.5-flash",
             "prompt": "Say hello",
-            "temperature": 0.9,
-            "top_p": 0.8,
-            "top_k": 20,
             "seed": 42,
-            "thinking_budget": 1024,
+            "thinking_level": "high",
         },
         headers=auth_headers,
     )
@@ -282,11 +280,8 @@ def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_head
     assert response.status_code == 200
 
     call_kwargs = gemini_module.build_llm_with_region_fallback.call_args.kwargs
-    assert call_kwargs["temperature"] == 0.9
-    assert call_kwargs["top_p"] == 0.8
-    assert call_kwargs["top_k"] == 20
     assert call_kwargs["seed"] == 42
-    assert call_kwargs["thinking_budget"] == 1024
+    assert call_kwargs["thinking_level"] == "high"
 
 
 def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers, mock_gemini_client_global):
@@ -306,11 +301,8 @@ def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers
             "model": "gemini-2.5-flash",
             "prompt": "Say hello",
             "system_instruction": "Be terse.",
-            "temperature": 0.4,
-            "top_p": 0.9,
-            "top_k": 10,
             "seed": 7,
-            "thinking_budget": 0,
+            "thinking_level": "low",
         },
         headers=auth_headers,
     )
@@ -319,11 +311,8 @@ def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers
 
     call_kwargs = mock_gemini_client_global.models.generate_content.call_args.kwargs
     config = call_kwargs["config"]
-    assert config.temperature == 0.4
-    assert config.top_p == 0.9
-    assert config.top_k == 10
     assert config.seed == 7
-    assert config.thinking_config.thinking_budget == 0
+    assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
 
 
 @pytest.mark.asyncio
@@ -387,11 +376,8 @@ async def test_gemini_stream_sampling_params(client: TestClient, auth_headers, m
         json={
             "model": "gemini-2.5-flash",
             "prompt": "Stream this",
-            "temperature": 1.2,
-            "top_p": 0.75,
-            "top_k": 30,
             "seed": 99,
-            "thinking_budget": -1,
+            "thinking_level": "medium",
         },
         headers=auth_headers,
     )
@@ -402,8 +388,5 @@ async def test_gemini_stream_sampling_params(client: TestClient, auth_headers, m
 
     call_kwargs = mock_generate.call_args.kwargs
     config = call_kwargs["config"]
-    assert config.temperature == 1.2
-    assert config.top_p == 0.75
-    assert config.top_k == 30
     assert config.seed == 99
-    assert config.thinking_config.thinking_budget == -1
+    assert config.thinking_config.thinking_level == types.ThinkingLevel.MEDIUM
