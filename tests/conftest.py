@@ -16,6 +16,13 @@ os.environ["REDIS_URL"] = "memory://"
 # happen to be sitting in it.
 os.environ["DATABASE_URL"] = "sqlite:///database/test.db"
 
+# The pin above is a relative path, and sqlite3 creates the *file* but never its
+# parent directory. database/ is gitignored, so a fresh CI checkout does not have
+# it — every test then errored with "unable to open database file" at fixture
+# setup (the 2026-11-07 PR CI run). Creating it here keeps the 0e4caff layout
+# (test.db out of the repo root) without depending on the developer's machine.
+os.makedirs("database", exist_ok=True)
+
 from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest  # noqa: E402
