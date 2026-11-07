@@ -4,8 +4,6 @@
 
 The **Gemini Playground** is a production-quality reference implementation of a Gemini-native AI platform. Built with FastAPI and LangGraph, it functions as a **simulation**: *what would a Google developer working on Gemini capabilities ship?*
 
-A companion React SPA frontend (`playground-ui/`) provides a polished Google-design-language interface for every feature.
-
 ---
 
 ## Purpose

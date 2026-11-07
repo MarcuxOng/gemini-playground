@@ -7,12 +7,7 @@ from __future__ import annotations
 import logging
 import re
 
-try:
-    from youtube_transcript_api import YouTubeTranscriptApi
-
-    _HAS_YT = True
-except ImportError:
-    _HAS_YT = False
+from youtube_transcript_api import YouTubeTranscriptApi
 
 from app.tools import register
 from app.utils.tool_limiter import check_tool_rate_limit
@@ -29,10 +24,6 @@ def get_youtube_transcript(url: str, lang: str = "en") -> str:
     :param url: The YouTube video URL or ID (e.g., 'https://www.youtube.com/watch?v=dQw4w9WgXcQ').
     :param lang: Preferred language code for the transcript (default is 'en').
     """
-    if not _HAS_YT:
-        return (
-            "Error: 'youtube-transcript-api' library not found. Please install it to use this tool."
-        )
     if not check_tool_rate_limit("get_youtube_transcript", "10/minute"):
         return "Rate limit exceeded: max 10 YouTube transcript requests per minute."
     try:

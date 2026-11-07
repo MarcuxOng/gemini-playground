@@ -5,13 +5,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 
-def test_agent_invoke_returns_403_without_internal_key(client: TestClient):
+def test_agent_invoke_returns_403_without_internal_key(client: TestClient, delegated_owner_id):
     """Public API key must not be accepted on the internal invoke endpoint."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "target_preset": "research",
             "model": "gemini-2.5-flash",
             "message": {
@@ -23,11 +25,12 @@ def test_agent_invoke_returns_403_without_internal_key(client: TestClient):
     assert resp.status_code in (403, 422)  # 422 if FastAPI rejects missing header before dep
 
 
-def test_agent_invoke_returns_403_with_bad_internal_key(client: TestClient):
+def test_agent_invoke_returns_403_with_bad_internal_key(client: TestClient, delegated_owner_id):
     """Wrong internal key is rejected."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "target_preset": "research",
             "model": "gemini-2.5-flash",
             "message": {
@@ -41,12 +44,13 @@ def test_agent_invoke_returns_403_with_bad_internal_key(client: TestClient):
 
 
 def test_agent_invoke_returns_200_with_valid_internal_key(
-    client: TestClient, internal_auth_headers
+    client: TestClient, internal_auth_headers, delegated_owner_id
 ):
-    """Valid internal key + text part returns 200."""
+    """Valid internal key + named owner returns 200."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "target_preset": "research",
             "model": "gemini-2.5-flash",
             "message": {
@@ -63,11 +67,14 @@ def test_agent_invoke_returns_200_with_valid_internal_key(
     assert data["data"]["answer"] == "mocked LLM response"
 
 
-def test_agent_invoke_rejects_invalid_preset(client: TestClient, internal_auth_headers):
+def test_agent_invoke_rejects_invalid_preset(
+    client: TestClient, internal_auth_headers, delegated_owner_id
+):
     """Unknown preset returns 400."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "target_preset": "nonexistent",
             "model": "gemini-2.5-flash",
             "message": {
@@ -80,11 +87,14 @@ def test_agent_invoke_rejects_invalid_preset(client: TestClient, internal_auth_h
     assert resp.status_code == 400
 
 
-def test_agent_invoke_rejects_missing_target(client: TestClient, internal_auth_headers):
+def test_agent_invoke_rejects_missing_target(
+    client: TestClient, internal_auth_headers, delegated_owner_id
+):
     """Missing both target_preset and target_agent_id returns 422."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "model": "gemini-2.5-flash",
             "message": {
                 "parts": [{"type": "text", "text": "test"}],
@@ -96,11 +106,14 @@ def test_agent_invoke_rejects_missing_target(client: TestClient, internal_auth_h
     assert resp.status_code == 422
 
 
-def test_agent_invoke_rejects_both_targets(client: TestClient, internal_auth_headers):
+def test_agent_invoke_rejects_both_targets(
+    client: TestClient, internal_auth_headers, delegated_owner_id
+):
     """Both target_preset and target_agent_id returns 422."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "target_preset": "research",
             "target_agent_id": "some-id",
             "model": "gemini-2.5-flash",
@@ -114,11 +127,14 @@ def test_agent_invoke_rejects_both_targets(client: TestClient, internal_auth_hea
     assert resp.status_code == 422
 
 
-def test_agent_invoke_with_metadata(client: TestClient, internal_auth_headers):
+def test_agent_invoke_with_metadata(
+    client: TestClient, internal_auth_headers, delegated_owner_id
+):
     """Message metadata is accepted."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "target_preset": "research",
             "model": "gemini-2.5-flash",
             "message": {
@@ -132,11 +148,14 @@ def test_agent_invoke_with_metadata(client: TestClient, internal_auth_headers):
     assert resp.status_code == 200
 
 
-def test_agent_invoke_returns_new_thread_id_when_none_given(client: TestClient, internal_auth_headers):
+def test_agent_invoke_returns_new_thread_id_when_none_given(
+    client: TestClient, internal_auth_headers, delegated_owner_id
+):
     """When no thread_id is provided a new thread is created and returned."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "target_preset": "research",
             "model": "gemini-2.5-flash",
             "message": {
@@ -151,11 +170,14 @@ def test_agent_invoke_returns_new_thread_id_when_none_given(client: TestClient, 
     assert data["data"]["thread_id"] is not None
 
 
-def test_agent_invoke_returns_404_for_nonexistent_thread_id(client: TestClient, internal_auth_headers):
+def test_agent_invoke_returns_404_for_nonexistent_thread_id(
+    client: TestClient, internal_auth_headers, delegated_owner_id
+):
     """A nonexistent thread_id returns 404."""
     resp = client.post(
         "/api/v1/agents/invoke",
         json={
+            "on_behalf_of": delegated_owner_id,
             "target_preset": "research",
             "model": "gemini-2.5-flash",
             "message": {
@@ -169,9 +191,94 @@ def test_agent_invoke_returns_404_for_nonexistent_thread_id(client: TestClient, 
     assert resp.status_code == 404
 
 
+def _invoke_body(owner_id, **overrides):
+    """Minimal valid /invoke body, so each T6 test varies only what it is about."""
+    body = {
+        "on_behalf_of": owner_id,
+        "target_preset": "research",
+        "model": "gemini-2.5-flash",
+        "message": {
+            "parts": [{"type": "text", "text": "hello"}],
+            "sender_id": "agent-a",
+        },
+    }
+    body.update(overrides)
+    return body
+
+
+def test_agent_invoke_requires_an_owner(client: TestClient, internal_auth_headers):
+    """T6: the internal key authenticates a server, not a user, so an owner is required."""
+    body = _invoke_body("unused")
+    del body["on_behalf_of"]
+
+    resp = client.post("/api/v1/agents/invoke", json=body, headers=internal_auth_headers)
+
+    assert resp.status_code == 422
+
+
+def test_agent_invoke_refuses_master_identity(client: TestClient, internal_auth_headers):
+    """T6: the ownership-filter bypass must not be requestable over the internal key.
+
+    Every filter is written `if api_key.id != "master"`, so accepting this value would
+    hand any internal-key holder every user's agents, threads, files and RAG documents.
+    """
+    resp = client.post(
+        "/api/v1/agents/invoke",
+        json=_invoke_body("master"),
+        headers=internal_auth_headers,
+    )
+
+    assert resp.status_code == 403
+
+
+def test_agent_invoke_refuses_unknown_owner(client: TestClient, internal_auth_headers):
+    """T6: an owner that does not resolve to a real, active key is refused."""
+    resp = client.post(
+        "/api/v1/agents/invoke",
+        json=_invoke_body("no-such-owner"),
+        headers=internal_auth_headers,
+    )
+
+    assert resp.status_code == 403
+
+
+def test_agent_invoke_cannot_reach_another_owners_thread(
+    client: TestClient, internal_auth_headers, delegated_owner_id, other_owner_id
+):
+    """T6 regression: one owner's thread is invisible to another over the same key.
+
+    Before the fix both calls ran as `APIKey(id="master")`, so the second returned 200
+    and appended to a thread its caller did not own.
+    """
+    created = client.post(
+        "/api/v1/agents/invoke",
+        json=_invoke_body(delegated_owner_id),
+        headers=internal_auth_headers,
+    )
+    assert created.status_code == 200
+    thread_id = created.json()["data"]["thread_id"]
+    assert thread_id is not None
+
+    # The owner can reach their own thread, so a 404 below is an ownership result
+    # and not an incidental lookup failure.
+    same_owner = client.post(
+        "/api/v1/agents/invoke",
+        json=_invoke_body(delegated_owner_id, thread_id=thread_id),
+        headers=internal_auth_headers,
+    )
+    assert same_owner.status_code == 200
+
+    intruder = client.post(
+        "/api/v1/agents/invoke",
+        json=_invoke_body(other_owner_id, thread_id=thread_id),
+        headers=internal_auth_headers,
+    )
+
+    assert intruder.status_code == 404
+
+
 def test_agent_message_model_validation():
     """AgentMessage Pydantic model enforces min 1 part."""
-    from pydantic import ValidationError
 
     from app.multi_agent.protocol import AgentMessage
 

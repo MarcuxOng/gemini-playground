@@ -9,8 +9,6 @@ _ALLOWED_MODEL_PREFIXES = (
     "text-embedding-",
     "antigravity-",
     "deep-research-",
-    "nano-banana-",
-    "image-",
     "text-multilingual-",
 )
 

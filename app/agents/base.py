@@ -76,7 +76,6 @@ def build_agent(
     system_prompt: str,
     model: str,
     checkpointer: Any = None,
-    native_tools: list[str] | None = None,
     cached_content: str | None = None,
     max_output_tokens: int | None = None,
 ) -> CompiledGraph:
@@ -88,7 +87,6 @@ def build_agent(
         system_prompt: System-level instruction injected at the start of every run.
         model:         Model name.
         checkpointer:  Optional checkpointer for persistent state.
-        native_tools:  Optional list of Gemini native tools ('search', 'code', 'url').
         cached_content: Optional Gemini context cache ID for shared context.
         max_output_tokens: Optional max output tokens for generation.
 
@@ -116,24 +114,10 @@ def build_agent(
         # Ensure all tools are converted to LangChain BaseTool objects
         processed_tools = project_tools_to_langchain(tools)
 
-        # Build LLM and bind native tools if requested
         llm = build_llm(model, cached_content=cached_content, max_output_tokens=max_output_tokens)
-        llm_with_tools: Any = llm
-
-        # Bind native tools if requested
-        if native_tools:
-            lc_native_tools: list[dict[str, Any]] = []
-            if "search" in native_tools:
-                lc_native_tools.append({"google_search_retrieval": {}})
-            if "code" in native_tools:
-                # Code execution is handled differently in LangChain usually but for Gemini it can be a tool.
-                lc_native_tools.append({"code_execution": {}})
-
-            if lc_native_tools:
-                llm_with_tools = llm.bind(tools=lc_native_tools)
 
         agent = create_agent(
-            model=llm_with_tools,
+            model=llm,
             tools=processed_tools,
             system_prompt=system_prompt,
             checkpointer=checkpointer,

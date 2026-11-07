@@ -2,6 +2,11 @@
 
 All multi-agent endpoints require internal-key auth (x-internal-key header)
 for server-to-server communication, or the standard API key for public endpoints.
+
+The internal key authenticates the calling *server*, not a user. It confers no
+ownership of its own: ``/invoke`` requires an ``on_behalf_of`` owner and runs under
+that identity, so ownership filters apply to inter-agent calls exactly as they do to
+public ones (T6).
 """
 
 from __future__ import annotations
@@ -20,9 +25,9 @@ from app.database.db import get_db
 from app.database.models import APIKey
 from app.multi_agent.consensus import run_consensus
 from app.multi_agent.protocol import AgentMessage, agent_message_to_gemini_parts
-from app.services.agents import AgentRunResponse, run_agent_service
+from app.services.agents import AgentRunRequest, AgentRunResponse, run_agent_service
 from app.services.caches import assert_cache_access
-from app.utils.auth import verify_api_key, verify_internal_key
+from app.utils.auth import resolve_delegated_key, verify_api_key, verify_internal_key
 from app.utils.limiter import limiter
 from app.utils.response import APIResponse
 from app.utils.sanitizer import sanitize_prompt
@@ -47,6 +52,10 @@ class InvokeRequest(BaseModel):
     model: ModelName = default_model
     message: AgentMessage
     thread_id: str | None = None
+    # The internal key proves the caller is a trusted service, not which user it acts
+    # for. Naming the owner is required so the run is ownership-filtered like any
+    # other; the master identity is refused (T6).
+    on_behalf_of: str = Field(..., min_length=1, max_length=64)
 
     @model_validator(mode="after")
     def check_target(self) -> InvokeRequest:
@@ -82,6 +91,10 @@ async def agent_invoke(
     and dispatches it to a target agent.  Access is restricted to callers
     that present the ``x-internal-key`` header.
 
+    The header authenticates the caller but grants no ownership: ``on_behalf_of``
+    names the owner the run executes as, and agents, threads, MCP configs, caches
+    and RAG documents are all filtered to that owner.
+
     Use this endpoint when one agent needs to pass raw multimodal data
     (screenshots, audio clips, PDFs) directly to another agent without
     lossy text transcription.
@@ -89,8 +102,9 @@ async def agent_invoke(
     preset_name = ""
     target_model = str(body.model)
 
-    # Build a synthetic AgentRunRequest to reuse the existing run_agent_service
-    from app.services.agents import AgentRunRequest as _AgentRunRequest
+    # The internal key says "a trusted service is calling", not "acting as whom". Resolve
+    # the named owner up front so everything below runs ownership-filtered (T6).
+    owner_key = resolve_delegated_key(db, body.on_behalf_of)
 
     if body.target_agent_id:
         preset_name = f"invoke:{body.target_agent_id}"
@@ -131,9 +145,10 @@ async def agent_invoke(
             )
 
     logger.info(
-        "MIAP invoke: sender=%s target=%s parts=%d",
+        "MIAP invoke: sender=%s target=%s owner=%s parts=%d",
         body.message.sender_id,
         preset_name,
+        owner_key.id,
         len(body.message.parts),
     )
 
@@ -144,7 +159,7 @@ async def agent_invoke(
         multimodal_parts.insert(0, {"type": "text", "text": sender_prefix})
 
     try:
-        run_request = _AgentRunRequest(
+        run_request = AgentRunRequest(
             model=target_model,
             preset=body.target_preset,
             agent_id=body.target_agent_id,
@@ -154,10 +169,7 @@ async def agent_invoke(
             multimodal_prompt=multimodal_parts if has_multimodal else None,
         )
 
-        # Use the master API key identity for the synthetic request
-        master_key = APIKey(id="master", name="Master Key")
-
-        response = await run_agent_service(run_request, db, master_key, fastapi_request=request)
+        response = await run_agent_service(run_request, db, owner_key, fastapi_request=request)
 
         return APIResponse(data=response)
 

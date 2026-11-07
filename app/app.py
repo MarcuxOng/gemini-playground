@@ -68,11 +68,6 @@ mcp_app = mcp.http_app(transport="sse")
 app.mount("/mcp", mcp_app)
 
 
-@app.get("/api/v1/health", response_model=APIResponse)
-async def health() -> APIResponse:  # type: ignore[type-arg]
-    return APIResponse(data={"message": "Health check passed"})
-
-
 @app.get("/", response_model=APIResponse)
 async def root() -> APIResponse:  # type: ignore[type-arg]
     return APIResponse(data={"message": "App is running"})

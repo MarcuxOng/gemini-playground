@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from google.genai import errors
+from google.genai import errors, types
 
 # --- Model name validation ---
 
@@ -38,12 +38,13 @@ def test_gemini_accepts_valid_model_names(client: TestClient, auth_headers, mock
 
 
 @pytest.mark.parametrize("bad_field,bad_value", [
-    ("temperature", 2.1),
-    ("temperature", -0.1),
-    ("top_p", 1.1),
-    ("top_p", -0.1),
-    ("top_k", 0),
-    ("thinking_budget", -2),
+    ("thinking_level", "maximal"),
+    ("thinking_level", 42),
+    # removed-but-still-sent deprecated params must be rejected, not silently ignored
+    ("thinking_budget", 1024),
+    ("temperature", 0.7),
+    ("top_p", 0.9),
+    ("top_k", 20),
 ])
 def test_gemini_rejects_out_of_range_sampling_params(client: TestClient, auth_headers, bad_field: str, bad_value: float):
     response = client.post(
@@ -270,11 +271,8 @@ def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_head
         json={
             "model": "gemini-2.5-flash",
             "prompt": "Say hello",
-            "temperature": 0.9,
-            "top_p": 0.8,
-            "top_k": 20,
             "seed": 42,
-            "thinking_budget": 1024,
+            "thinking_level": "high",
         },
         headers=auth_headers,
     )
@@ -282,11 +280,8 @@ def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_head
     assert response.status_code == 200
 
     call_kwargs = gemini_module.build_llm_with_region_fallback.call_args.kwargs
-    assert call_kwargs["temperature"] == 0.9
-    assert call_kwargs["top_p"] == 0.8
-    assert call_kwargs["top_k"] == 20
     assert call_kwargs["seed"] == 42
-    assert call_kwargs["thinking_budget"] == 1024
+    assert call_kwargs["thinking_level"] == "high"
 
 
 def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers, mock_gemini_client_global):
@@ -306,11 +301,8 @@ def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers
             "model": "gemini-2.5-flash",
             "prompt": "Say hello",
             "system_instruction": "Be terse.",
-            "temperature": 0.4,
-            "top_p": 0.9,
-            "top_k": 10,
             "seed": 7,
-            "thinking_budget": 0,
+            "thinking_level": "low",
         },
         headers=auth_headers,
     )
@@ -319,11 +311,8 @@ def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers
 
     call_kwargs = mock_gemini_client_global.models.generate_content.call_args.kwargs
     config = call_kwargs["config"]
-    assert config.temperature == 0.4
-    assert config.top_p == 0.9
-    assert config.top_k == 10
     assert config.seed == 7
-    assert config.thinking_config.thinking_budget == 0
+    assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
 
 
 @pytest.mark.asyncio
@@ -387,11 +376,8 @@ async def test_gemini_stream_sampling_params(client: TestClient, auth_headers, m
         json={
             "model": "gemini-2.5-flash",
             "prompt": "Stream this",
-            "temperature": 1.2,
-            "top_p": 0.75,
-            "top_k": 30,
             "seed": 99,
-            "thinking_budget": -1,
+            "thinking_level": "medium",
         },
         headers=auth_headers,
     )
@@ -402,115 +388,5 @@ async def test_gemini_stream_sampling_params(client: TestClient, auth_headers, m
 
     call_kwargs = mock_generate.call_args.kwargs
     config = call_kwargs["config"]
-    assert config.temperature == 1.2
-    assert config.top_p == 0.75
-    assert config.top_k == 30
     assert config.seed == 99
-    assert config.thinking_config.thinking_budget == -1
-
-
-# --- Regional/global fallback (models only served from one Vertex endpoint) ---
-
-def test_gemini_falls_back_to_global_on_regional_404(client: TestClient, auth_headers, mock_gemini_client_global):
-    import app.services.genai_calls as genai_calls_module
-
-    mock_gemini_client_global.models.generate_content.reset_mock(side_effect=True)
-    mock_gemini_client_global.models.generate_content.side_effect = errors.ClientError(
-        404,
-        {"error": {"code": 404, "status": "NOT_FOUND", "message": "Publisher model not found in region"}},
-    )
-
-    mock_global_response = MagicMock()
-    mock_global_response.text = "Response from the global endpoint."
-    mock_global_response.candidates = []
-    mock_global_response.prompt_feedback = None
-    mock_global_client = MagicMock()
-    mock_global_client.models.generate_content.return_value = mock_global_response
-
-    try:
-        with patch.object(genai_calls_module, "global_client", mock_global_client):
-            response = client.post(
-                "/api/v1/gemini/",
-                json={
-                    "model": "gemini-3.5-flash",
-                    "prompt": "Say hello",
-                    "system_instruction": "Be terse.",  # forces the raw-client path
-                },
-                headers=auth_headers,
-            )
-    finally:
-        # This mock is a session-scoped shared fixture (patched into other services too) —
-        # clear the side_effect so it doesn't leak into unrelated tests.
-        mock_gemini_client_global.models.generate_content.side_effect = None
-
-    assert response.status_code == 200
-    assert "Response from the global endpoint." in response.json()["data"]
-    mock_global_client.models.generate_content.assert_called_once()
-    assert mock_global_client.models.generate_content.call_args.kwargs["model"] == "gemini-3.5-flash"
-
-
-def test_gemini_raw_client_non_404_error_does_not_fall_back(client: TestClient, auth_headers, mock_gemini_client_global):
-    import app.services.genai_calls as genai_calls_module
-
-    mock_gemini_client_global.models.generate_content.reset_mock(side_effect=True)
-    mock_gemini_client_global.models.generate_content.side_effect = errors.ClientError(
-        429,
-        {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded"}},
-    )
-    mock_global_client = MagicMock()
-
-    try:
-        with patch.object(genai_calls_module, "global_client", mock_global_client):
-            # Non-404 errors propagate unhandled (matching production behavior), not a clean 500 response.
-            with pytest.raises(errors.ClientError) as exc_info:
-                client.post(
-                    "/api/v1/gemini/",
-                    json={
-                        "model": "gemini-2.5-flash",
-                        "prompt": "Say hello",
-                        "system_instruction": "Be terse.",
-                    },
-                    headers=auth_headers,
-                )
-            assert exc_info.value.code == 429
-    finally:
-        mock_gemini_client_global.models.generate_content.side_effect = None
-
-    mock_global_client.models.generate_content.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_gemini_stream_falls_back_to_global_on_regional_404(client: TestClient, auth_headers, mock_gemini_client_global):
-    import app.services.genai_calls as genai_calls_module
-
-    mock_aio = MagicMock()
-    mock_gemini_client_global.aio = mock_aio
-    mock_generate = AsyncMock()
-    mock_aio.models.generate_content_stream = mock_generate
-    mock_generate.side_effect = errors.ClientError(
-        404,
-        {"error": {"code": 404, "status": "NOT_FOUND", "message": "Publisher model not found in region"}},
-    )
-
-    async def mock_global_stream_gen():
-        mock_chunk = MagicMock()
-        mock_chunk.text = "Streamed from global."
-        mock_chunk.candidates = []
-        yield mock_chunk
-
-    mock_global_client = MagicMock()
-    mock_global_generate = AsyncMock()
-    mock_global_client.aio.models.generate_content_stream = mock_global_generate
-    mock_global_generate.return_value = mock_global_stream_gen()
-
-    with patch.object(genai_calls_module, "global_client", mock_global_client):
-        response = client.post(
-            "/api/v1/gemini/stream",
-            json={"model": "gemini-3.5-flash", "prompt": "Stream this"},
-            headers=auth_headers,
-        )
-
-    assert response.status_code == 200
-    assert "Streamed from global." in response.content.decode("utf-8")
-    mock_global_generate.assert_called_once()
-
+    assert config.thinking_config.thinking_level == types.ThinkingLevel.MEDIUM

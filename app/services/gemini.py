@@ -7,8 +7,10 @@ import re
 import threading
 import uuid
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 
+import magic
 from fastapi import Request
 from google import genai
 from google.genai import types
@@ -23,6 +25,7 @@ from app.services.genai_calls import (
 from app.services.llm import build_llm, build_llm_with_region_fallback
 from app.services.safety import SAFETY_SETTINGS
 from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
+from app.utils.mime import _mime_allowed
 
 logger = logging.getLogger(__name__)
 _token_lock_guard = threading.Lock()
@@ -82,6 +85,9 @@ def _log_citation_events(response: types.GenerateContentResponse, model: str) ->
                         chunk_entry["type"] = "image"
                     if getattr(gc, "maps", None):
                         chunk_entry["type"] = "maps"
+                        chunk_entry["place_id"] = gc.maps.place_id
+                        chunk_entry["title"] = gc.maps.title
+                        chunk_entry["uri"] = gc.maps.uri
                     chunks_data.append(chunk_entry)
                 citation_data["grounding_chunks"] = chunks_data
 
@@ -364,11 +370,8 @@ def _build_generate_config(
     max_tokens: int | None = None,
     stop_sequences: list[str] | None = None,
     system_instruction: str | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    top_k: int | None = None,
     seed: int | None = None,
-    thinking_budget: int | None = None,
+    thinking_level: str | None = None,
 ) -> types.GenerateContentConfig:
     """Assemble the raw-client request config shared by the sync and streaming paths."""
     tools_config = None
@@ -388,6 +391,8 @@ def _build_generate_config(
         )
         tools_config = None
 
+    # temperature/top_p/top_k are deprecated (rejected by upcoming Gemini models);
+    # thinking_level replaces thinking_budget.
     return types.GenerateContentConfig(
         tools=tools_config,
         safety_settings=SAFETY_SETTINGS,
@@ -395,12 +400,9 @@ def _build_generate_config(
         max_output_tokens=max_tokens,
         stop_sequences=stop_sequences or None,
         system_instruction=system_instruction,
-        temperature=temperature,
-        top_p=top_p,
-        top_k=top_k,
         seed=seed,
-        thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget)
-        if thinking_budget is not None
+        thinking_config=types.ThinkingConfig(thinking_level=thinking_level)
+        if thinking_level is not None
         else None,
     )
 
@@ -417,16 +419,13 @@ def gemini_service(
     max_output_tokens: int | None = None,
     stop_sequences: list[str] | None = None,
     system_instruction: str | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    top_k: int | None = None,
     seed: int | None = None,
-    thinking_budget: int | None = None,
+    thinking_level: str | None = None,
 ) -> str:
     """
     Generation service consolidated on the LangChain path.
     Reaches for raw genai.Client only when attachments or native_tools are present since LangChain's Files API integration or native tools is less direct.
-    Sampling params (temperature/top_p/top_k/seed/thinking_budget) are supported on both paths and don't force the raw-client branch.
+    Sampling params (seed/thinking_level) are supported on both paths and don't force the raw-client branch; temperature/top_p/top_k are deprecated by Gemini and not accepted.
     """
     if max_output_tokens is not None and max_output_tokens < 1:
         raise ValueError(f"max_output_tokens must be >= 1, got {max_output_tokens}")
@@ -452,11 +451,8 @@ def gemini_service(
                 max_tokens=max_tokens,
                 stop_sequences=stop_sequences,
                 system_instruction=system_instruction,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
                 seed=seed,
-                thinking_budget=thinking_budget,
+                thinking_level=thinking_level,
             )
 
             # Reach for raw genai.Client for capabilities LangChain doesn't wrap
@@ -466,21 +462,35 @@ def gemini_service(
             _set_request_tokens(fastapi_request, response.usage_metadata)
             text = str(response.text or "")
 
-            # Format and append grounding sources if search was enabled and sources found
+            # Format and append grounding sources if search/maps was enabled and sources found
             candidate = response.candidates[0] if response.candidates else None
             if candidate and getattr(candidate, "grounding_metadata", None):
                 meta = candidate.grounding_metadata
                 chunks = getattr(meta, "grounding_chunks", []) or []
-                sources: list[tuple[str, str]] = []
+                web_sources: list[tuple[str, str]] = []
+                places: list[tuple[str, str, str]] = []  # (title, place_id, uri)
                 for chunk in chunks:
                     if chunk.web:
                         title = chunk.web.title or "Untitled"
                         uri = chunk.web.uri or ""
-                        if uri and uri not in [s[1] for s in sources]:
-                            sources.append((title, uri))
-                if sources:
+                        if uri and uri not in [s[1] for s in web_sources]:
+                            web_sources.append((title, uri))
+                    if chunk.maps:
+                        title = chunk.maps.title or "Untitled place"
+                        uri = chunk.maps.uri or ""
+                        place_id = chunk.maps.place_id or ""
+                        if uri and uri not in [p[2] for p in places]:
+                            places.append((title, place_id, uri))
+                if web_sources:
                     text += "\n\n**Sources:**\n" + "\n".join(
-                        f"- [{title}]({uri})" for title, uri in sources
+                        f"- [{title}]({uri})" for title, uri in web_sources
+                    )
+                if places:
+                    # Maps attributions must keep their display form and link out
+                    # to Google Maps (display requirements for Maps grounding).
+                    text += "\n\n**Places:**\n" + "\n".join(
+                        f"- [{title}]({uri})" + (f" (place_id: {place_id})" if place_id else "")
+                        for title, place_id, uri in places
                     )
             return text
         else:
@@ -488,11 +498,8 @@ def gemini_service(
             llm = build_llm_with_region_fallback(
                 model,
                 max_output_tokens=max_tokens,
-                temperature=temperature if temperature is not None else 0.1,
-                top_p=top_p,
-                top_k=top_k,
                 seed=seed,
-                thinking_budget=thinking_budget,
+                thinking_level=thinking_level,
             )
             llm_response = llm.invoke(prompt)
             _set_request_tokens(fastapi_request, getattr(llm_response, "usage_metadata", None))
@@ -555,6 +562,63 @@ def structured_service(
         raise
 
 
+def ask_file_service(file_path: str, question: str, model: str = default_model) -> str:
+    """Native multimodal file understanding: upload, ask, clean up.
+
+    The stateless core of the `gemini_ask_file` MCP tool. Nothing is persisted —
+    the file is uploaded to the Files API (or GCS in production), reasoned over
+    natively by the model (no text extraction, no conversion step), and deleted
+    in a `finally` so an answer never leaves an orphaned upload behind.
+
+    The true MIME type is detected from the bytes via libmagic (the same check
+    the upload endpoint applies) — a misleading extension cannot poison what
+    the model is told it is reading.
+    """
+    max_bytes = 20 * 1024 * 1024  # Gemini Files API inline limit is 20MB
+    path = Path(file_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"File not found: {file_path}")
+    content = path.read_bytes()
+    if len(content) > max_bytes:
+        raise ValueError(f"File exceeds the {max_bytes // (1024 * 1024)}MB Files API limit")
+    mime_type = magic.from_buffer(content, mime=True)
+    if not _mime_allowed(mime_type):
+        raise ValueError(f"Unsupported file type: {mime_type!r}")
+
+    uploaded = upload_file_to_gemini(content, path.name, mime_type)
+    try:
+        contents: list[Any] = [
+            types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime_type),
+            question,
+        ]
+        config = types.GenerateContentConfig(safety_settings=SAFETY_SETTINGS)
+        response = generate_content_with_fallback(model=model, contents=contents, config=config)
+        _check_safety_block(response, model)
+        return str(response.text or "")
+    finally:
+        try:
+            delete_file_from_gemini(uploaded.name, uploaded.uri)
+        except Exception:
+            # Cleanup must never mask the answer or the original error.
+            logger.warning("Failed to delete uploaded file %r after ask_file", uploaded.name)
+
+
+def maps_answer_service(question: str, model: str = default_model) -> str:
+    """Grounded answers over Google Maps data (Places, addresses, hours, routes).
+
+    The service core of the `gemini_maps_answer` MCP tool. Composes over
+    `gemini_service` with `native_tools=["location"]` — the google_maps Tool
+    built at `build_native_tools` — and inherits its source formatting: Maps
+    grounding chunks are appended as **Places:** entries (title, place_id,
+    Google Maps URI) alongside any web sources the model also cites.
+
+    Maps grounding is off by default at the API and activates only when the
+    query is location-seeking; the tool declares no location bias because
+    GoogleMaps on generateContent accepts none (latLng bias is Interactions-only).
+    """
+    return gemini_service(model=model, prompt=question, native_tools=["location"])
+
+
 def generate_thread_title(prompt: str, model: str = default_model) -> str:
     """
     Generates a short (3-5 words) descriptive title for a thread based on the initial prompt.
@@ -588,11 +652,8 @@ async def gemini_stream_service(
     max_output_tokens: int | None = None,
     stop_sequences: list[str] | None = None,
     system_instruction: str | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    top_k: int | None = None,
     seed: int | None = None,
-    thinking_budget: int | None = None,
+    thinking_level: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming intentionally uses genai.Client.aio for native SSE support."""
     max_tokens = max_output_tokens if max_output_tokens is not None else default_max_tokens
@@ -613,11 +674,8 @@ async def gemini_stream_service(
             max_tokens=max_tokens,
             stop_sequences=stop_sequences,
             system_instruction=system_instruction,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
             seed=seed,
-            thinking_budget=thinking_budget,
+            thinking_level=thinking_level,
         )
 
         response = await generate_content_stream_with_fallback(

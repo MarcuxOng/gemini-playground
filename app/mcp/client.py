@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from langchain_core.tools import BaseTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,6 @@ async def load_mcp_tools(server_config: dict[str, object]) -> list[BaseTool]:
     Connect to an external MCP server and return its tools as LangChain BaseTools.
     """
     try:
-        from langchain_mcp_adapters.client import MultiServerMCPClient
-
         transport = server_config.get("transport")
 
         # Infer transport if missing
@@ -56,11 +55,6 @@ async def load_mcp_tools(server_config: dict[str, object]) -> list[BaseTool]:
             logger.info(f"Loaded {len(tools)} tools from MCP server '{server_config['name']}'")
             return tools
 
-    except ImportError:
-        logger.error(
-            "langchain-mcp-adapters not installed. Run: pip install langchain-mcp-adapters"
-        )
-        raise
     except Exception:
         logger.exception(f"Failed to load MCP tools from '{server_config.get('name')}'")
         raise

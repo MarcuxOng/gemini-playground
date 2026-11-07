@@ -118,5 +118,7 @@ def call_tool(name: str, **kwargs: Any) -> Any:
 
 # Import submodules to trigger registration decorators
 from app.tools.finance import finance_tools  # noqa: E402, F401
+from app.tools.location import maps  # noqa: E402, F401
+from app.tools.multimodal import ask_file  # noqa: E402, F401
 from app.tools.system import system_tools  # noqa: E402, F401
 from app.tools.web import web_tools  # noqa: E402, F401
