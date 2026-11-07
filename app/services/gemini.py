@@ -7,8 +7,10 @@ import re
 import threading
 import uuid
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 
+import magic
 from fastapi import Request
 from google import genai
 from google.genai import types
@@ -23,6 +25,7 @@ from app.services.genai_calls import (
 from app.services.llm import build_llm, build_llm_with_region_fallback
 from app.services.safety import SAFETY_SETTINGS
 from app.utils.gcs import delete_from_gcs, get_gcs_bucket_name, upload_to_gcs
+from app.utils.mime import _mime_allowed
 
 logger = logging.getLogger(__name__)
 _token_lock_guard = threading.Lock()
@@ -540,6 +543,47 @@ def structured_service(
     except Exception as e:
         logger.error(f"Error generating structured content: {e}")
         raise
+
+
+def ask_file_service(file_path: str, question: str, model: str = default_model) -> str:
+    """Native multimodal file understanding: upload, ask, clean up.
+
+    The stateless core of the `gemini_ask_file` MCP tool. Nothing is persisted —
+    the file is uploaded to the Files API (or GCS in production), reasoned over
+    natively by the model (no text extraction, no conversion step), and deleted
+    in a `finally` so an answer never leaves an orphaned upload behind.
+
+    The true MIME type is detected from the bytes via libmagic (the same check
+    the upload endpoint applies) — a misleading extension cannot poison what
+    the model is told it is reading.
+    """
+    max_bytes = 20 * 1024 * 1024  # Gemini Files API inline limit is 20MB
+    path = Path(file_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"File not found: {file_path}")
+    content = path.read_bytes()
+    if len(content) > max_bytes:
+        raise ValueError(f"File exceeds the {max_bytes // (1024 * 1024)}MB Files API limit")
+    mime_type = magic.from_buffer(content, mime=True)
+    if not _mime_allowed(mime_type):
+        raise ValueError(f"Unsupported file type: {mime_type!r}")
+
+    uploaded = upload_file_to_gemini(content, path.name, mime_type)
+    try:
+        contents: list[Any] = [
+            types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime_type),
+            question,
+        ]
+        config = types.GenerateContentConfig(safety_settings=SAFETY_SETTINGS)
+        response = generate_content_with_fallback(model=model, contents=contents, config=config)
+        _check_safety_block(response, model)
+        return str(response.text or "")
+    finally:
+        try:
+            delete_file_from_gemini(uploaded.name, uploaded.uri)
+        except Exception:
+            # Cleanup must never mask the answer or the original error.
+            logger.warning("Failed to delete uploaded file %r after ask_file", uploaded.name)
 
 
 def generate_thread_title(prompt: str, model: str = default_model) -> str:
