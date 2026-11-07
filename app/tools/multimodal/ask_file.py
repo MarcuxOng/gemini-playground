@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 @register
 def gemini_ask_file(path: str, question: str) -> str:
     """
-    Ask Gemini a question about a local file — PDF, image, audio or video — using native multimodal understanding. 
+    Ask Gemini a question about a local file — PDF, image, audio or video — using native multimodal understanding.
     No conversion step: the file is reasoned over in its original form.
 
     :param path: Path to the file on the machine running this server.
