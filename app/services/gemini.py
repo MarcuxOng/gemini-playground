@@ -85,6 +85,9 @@ def _log_citation_events(response: types.GenerateContentResponse, model: str) ->
                         chunk_entry["type"] = "image"
                     if getattr(gc, "maps", None):
                         chunk_entry["type"] = "maps"
+                        chunk_entry["place_id"] = gc.maps.place_id
+                        chunk_entry["title"] = gc.maps.title
+                        chunk_entry["uri"] = gc.maps.uri
                     chunks_data.append(chunk_entry)
                 citation_data["grounding_chunks"] = chunks_data
 
@@ -459,21 +462,35 @@ def gemini_service(
             _set_request_tokens(fastapi_request, response.usage_metadata)
             text = str(response.text or "")
 
-            # Format and append grounding sources if search was enabled and sources found
+            # Format and append grounding sources if search/maps was enabled and sources found
             candidate = response.candidates[0] if response.candidates else None
             if candidate and getattr(candidate, "grounding_metadata", None):
                 meta = candidate.grounding_metadata
                 chunks = getattr(meta, "grounding_chunks", []) or []
-                sources: list[tuple[str, str]] = []
+                web_sources: list[tuple[str, str]] = []
+                places: list[tuple[str, str, str]] = []  # (title, place_id, uri)
                 for chunk in chunks:
                     if chunk.web:
                         title = chunk.web.title or "Untitled"
                         uri = chunk.web.uri or ""
-                        if uri and uri not in [s[1] for s in sources]:
-                            sources.append((title, uri))
-                if sources:
+                        if uri and uri not in [s[1] for s in web_sources]:
+                            web_sources.append((title, uri))
+                    if chunk.maps:
+                        title = chunk.maps.title or "Untitled place"
+                        uri = chunk.maps.uri or ""
+                        place_id = chunk.maps.place_id or ""
+                        if uri and uri not in [p[2] for p in places]:
+                            places.append((title, place_id, uri))
+                if web_sources:
                     text += "\n\n**Sources:**\n" + "\n".join(
-                        f"- [{title}]({uri})" for title, uri in sources
+                        f"- [{title}]({uri})" for title, uri in web_sources
+                    )
+                if places:
+                    # Maps attributions must keep their display form and link out
+                    # to Google Maps (display requirements for Maps grounding).
+                    text += "\n\n**Places:**\n" + "\n".join(
+                        f"- [{title}]({uri})" + (f" (place_id: {place_id})" if place_id else "")
+                        for title, place_id, uri in places
                     )
             return text
         else:
@@ -584,6 +601,22 @@ def ask_file_service(file_path: str, question: str, model: str = default_model) 
         except Exception:
             # Cleanup must never mask the answer or the original error.
             logger.warning("Failed to delete uploaded file %r after ask_file", uploaded.name)
+
+
+def maps_answer_service(question: str, model: str = default_model) -> str:
+    """Grounded answers over Google Maps data (Places, addresses, hours, routes).
+
+    The service core of the `gemini_maps_answer` MCP tool. Composes over
+    `gemini_service` with `native_tools=["location"]` — the google_maps Tool
+    built at `build_native_tools` — and inherits its source formatting: Maps
+    grounding chunks are appended as **Places:** entries (title, place_id,
+    Google Maps URI) alongside any web sources the model also cites.
+
+    Maps grounding is off by default at the API and activates only when the
+    query is location-seeking; the tool declares no location bias because
+    GoogleMaps on generateContent accepts none (latLng bias is Interactions-only).
+    """
+    return gemini_service(model=model, prompt=question, native_tools=["location"])
 
 
 def generate_thread_title(prompt: str, model: str = default_model) -> str:
