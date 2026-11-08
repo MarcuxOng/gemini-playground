@@ -1,0 +1,14 @@
+[
+  {
+    "input": "Read https://en.wikipedia.org/wiki/Model_Context_Protocol — who created MCP and when was it announced?",
+    "expected": "The answer states Anthropic created MCP and the announced year (2024), grounded in the page's content rather than general knowledge alone."
+  },
+  {
+    "input": "Read https://ai.google.dev/gemini-api/docs/models — which Gemini model families are listed for general use?",
+    "expected": "The answer lists the Gemini model families actually present on the page (e.g. Pro, Flash, Flash-Lite) rather than inventing model names."
+  },
+  {
+    "input": "Read https://en.wikipedia.org/wiki/Python_(programming_language) — who created Python and in what year was it first released?",
+    "expected": "The answer states Guido van Rossum created Python and it was first released in 1991, grounded in the page."
+  }
+]

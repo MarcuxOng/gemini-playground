@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from app.tools.web import (
+    grounded,
+    read_url,
     search,
     weather,
     wikipedia,
@@ -8,6 +10,8 @@ from app.tools.web import (
 )
 
 web_tools = [
+    grounded,
+    read_url,
     search,
     weather,
     wikipedia,

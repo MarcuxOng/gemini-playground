@@ -1,0 +1,18 @@
+[
+  {
+    "input": "What is the 100th prime number?",
+    "expected": "541, computed via code in the sandbox (not guessed), with the executed code and its output surfaced in the response."
+  },
+  {
+    "input": "How many palindromic numbers are there between 1 and 10,000 inclusive?",
+    "expected": "The exact count (computed programmatically), not an estimate; the code that counted them is shown."
+  },
+  {
+    "input": "Convert 255 fahrenheit to celsius.",
+    "expected": "The correct conversion of approximately 123.89°C, computed via the conversion formula in code."
+  },
+  {
+    "input": "What is the SHA-256 hash of the string 'gemini'?",
+    "expected": "A valid 64-character lowercase hex digest computed in the sandbox, not a placeholder or truncated value."
+  }
+]

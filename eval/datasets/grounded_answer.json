@@ -1,0 +1,18 @@
+[
+  {
+    "input": "What is the latest stable version of Python and when was it released?",
+    "expected": "The answer names a current stable Python version (3.12 or later) with its release year, and cites at least one web source; the Citations section maps the version claim to a source."
+  },
+  {
+    "input": "Which company acquired DeepMind and in what year?",
+    "expected": "The answer states Google acquired DeepMind in 2014 (or the documented year) and cites web sources supporting it."
+  },
+  {
+    "input": "What did the EU AI Act adopt in 2024 and when did it enter into force?",
+    "expected": "The answer states the EU AI Act's adoption and entry-into-force dates with cited sources; the Citations section maps the date claims to those sources."
+  },
+  {
+    "input": "Who is the current CEO of Google and since when?",
+    "expected": "The answer names the current Google CEO and the year they took the role, backed by cited web sources in the Sources list."
+  }
+]

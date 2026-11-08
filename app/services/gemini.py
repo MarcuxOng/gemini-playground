@@ -407,6 +407,111 @@ def _build_generate_config(
     )
 
 
+def _format_grounding_sources(candidate: Any) -> str:
+    """Format a candidate's grounding chunks as markdown source lists.
+
+    Web chunks become **Sources:**; Maps chunks keep their display form and
+    link out to Google Maps as **Places:** (the display requirement for Maps
+    grounding). Returns "" when there are no usable chunks, so callers can
+    append unconditionally.
+    """
+    meta = getattr(candidate, "grounding_metadata", None)
+    if not meta:
+        return ""
+    chunks = getattr(meta, "grounding_chunks", []) or []
+    web_sources: list[tuple[str, str]] = []
+    places: list[tuple[str, str, str]] = []  # (title, place_id, uri)
+    for chunk in chunks:
+        if chunk.web:
+            title = chunk.web.title or "Untitled"
+            uri = chunk.web.uri or ""
+            if uri and uri not in [s[1] for s in web_sources]:
+                web_sources.append((title, uri))
+        if chunk.maps:
+            title = chunk.maps.title or "Untitled place"
+            uri = chunk.maps.uri or ""
+            place_id = chunk.maps.place_id or ""
+            if uri and uri not in [p[2] for p in places]:
+                places.append((title, place_id, uri))
+    out = ""
+    if web_sources:
+        out += "\n\n**Sources:**\n" + "\n".join(f"- [{title}]({uri})" for title, uri in web_sources)
+    if places:
+        out += "\n\n**Places:**\n" + "\n".join(
+            f"- [{title}]({uri})" + (f" (place_id: {place_id})" if place_id else "")
+            for title, place_id, uri in places
+        )
+    return out
+
+
+def _format_grounding_citations(candidate: Any) -> str:
+    """Format a candidate's grounding supports as a segment → source citation map.
+
+    Each support says which span of the answer is backed by which grounding
+    chunks. Surfacing that mapping is the work of `gemini_grounded_answer` —
+    it is the citation *structure* a plain web-search client does not have.
+    Returns "" when there are no usable supports.
+    """
+    meta = getattr(candidate, "grounding_metadata", None)
+    if not meta:
+        return ""
+    chunks = getattr(meta, "grounding_chunks", []) or []
+    supports = getattr(meta, "grounding_supports", []) or []
+    if not supports or not chunks:
+        return ""
+
+    def _chunk_label(index: int) -> str:
+        chunk = chunks[index] if 0 <= index < len(chunks) else None
+        if chunk is not None:
+            if getattr(chunk, "maps", None):
+                m = chunk.maps
+                return f"[{m.title or 'Place'}]({m.uri or ''})"
+            if getattr(chunk, "web", None):
+                w = chunk.web
+                return f"[{w.title or 'Untitled'}]({w.uri or ''})"
+            if getattr(chunk, "retrieved_context", None):
+                rc = chunk.retrieved_context
+                return f"[{rc.title or 'Source'}]({rc.uri or ''})"
+        return f"[{index + 1}]"
+
+    lines: list[str] = []
+    for support in supports:
+        segment = getattr(support, "segment", None)
+        seg_text = getattr(segment, "text", None) if segment else ""
+        indices = list(getattr(support, "grounding_chunk_indices", []) or [])
+        if not seg_text or not indices:
+            continue
+        snippet = seg_text if len(seg_text) <= 120 else seg_text[:117] + "..."
+        sources = ", ".join(_chunk_label(i) for i in indices)
+        lines.append(f'- "{snippet}" — {sources}')
+    if not lines:
+        return ""
+    return "\n\n**Citations:**\n" + "\n".join(lines)
+
+
+def _format_code_execution_work(response: Any) -> str:
+    """Extract the code the model ran in the sandbox, in execution order.
+
+    Code-execution responses carry `executable_code` and
+    `code_execution_result` parts alongside the text answer. Surfacing them
+    shows the caller the computation that produced the result — the part of
+    a sandboxed run a plain answer hides.
+    """
+    blocks: list[str] = []
+    for candidate in getattr(response, "candidates", []) or []:
+        content = getattr(candidate, "content", None)
+        for part in getattr(content, "parts", []) or []:
+            code_part = getattr(part, "executable_code", None)
+            if code_part and getattr(code_part, "code", None):
+                blocks.append(f"```python\n{code_part.code}\n```")
+            result_part = getattr(part, "code_execution_result", None)
+            if result_part and getattr(result_part, "output", None):
+                blocks.append(f"```\n{result_part.output}\n```")
+    if not blocks:
+        return ""
+    return "\n\n**Code executed:**\n" + "\n\n".join(blocks)
+
+
 def gemini_service(
     model: str,
     prompt: str,
@@ -464,34 +569,7 @@ def gemini_service(
 
             # Format and append grounding sources if search/maps was enabled and sources found
             candidate = response.candidates[0] if response.candidates else None
-            if candidate and getattr(candidate, "grounding_metadata", None):
-                meta = candidate.grounding_metadata
-                chunks = getattr(meta, "grounding_chunks", []) or []
-                web_sources: list[tuple[str, str]] = []
-                places: list[tuple[str, str, str]] = []  # (title, place_id, uri)
-                for chunk in chunks:
-                    if chunk.web:
-                        title = chunk.web.title or "Untitled"
-                        uri = chunk.web.uri or ""
-                        if uri and uri not in [s[1] for s in web_sources]:
-                            web_sources.append((title, uri))
-                    if chunk.maps:
-                        title = chunk.maps.title or "Untitled place"
-                        uri = chunk.maps.uri or ""
-                        place_id = chunk.maps.place_id or ""
-                        if uri and uri not in [p[2] for p in places]:
-                            places.append((title, place_id, uri))
-                if web_sources:
-                    text += "\n\n**Sources:**\n" + "\n".join(
-                        f"- [{title}]({uri})" for title, uri in web_sources
-                    )
-                if places:
-                    # Maps attributions must keep their display form and link out
-                    # to Google Maps (display requirements for Maps grounding).
-                    text += "\n\n**Places:**\n" + "\n".join(
-                        f"- [{title}]({uri})" + (f" (place_id: {place_id})" if place_id else "")
-                        for title, place_id, uri in places
-                    )
+            text += _format_grounding_sources(candidate)
             return text
         else:
             logger.info(f"Generating content with Gemini model: {model}")
@@ -617,6 +695,57 @@ def maps_answer_service(question: str, model: str = default_model) -> str:
     GoogleMaps on generateContent accepts none (latLng bias is Interactions-only).
     """
     return gemini_service(model=model, prompt=question, native_tools=["location"])
+
+
+def grounded_answer_service(question: str, model: str = default_model) -> str:
+    """Search-grounded answer with the full citation map surfaced.
+
+    The service core of the `gemini_grounded_answer` MCP tool. A plain
+    web-search client returns an answer and, at best, a source list; this
+    also surfaces the grounding supports — Gemini's own segment-to-source
+    mapping naming which parts of the answer are backed by which sources —
+    as a **Citations:** block after the **Sources:** list.
+    """
+    contents: Any = [question]
+    config = _build_generate_config(native_tools=["search"], max_tokens=default_max_tokens)
+    response = generate_content_with_fallback(model=model, contents=contents, config=config)
+    _check_safety_block(response, model)
+    _log_citation_events(response, model)
+    text = str(response.text or "")
+    candidate = response.candidates[0] if response.candidates else None
+    text += _format_grounding_sources(candidate)
+    text += _format_grounding_citations(candidate)
+    return text
+
+
+def read_url_service(url: str, question: str, model: str = default_model) -> str:
+    """Fetch and reason over a page in one call via Gemini's url_context tool.
+
+    The service core of the `gemini_read_url` MCP tool. There is no scraping
+    layer on this side: the page is fetched and grounded by Gemini natively,
+    and the response inherits gemini_service's source formatting, so the
+    read pages surface as **Sources:** entries.
+    """
+    prompt = f"{question}\n\nRead this page and ground your answer in it: {url}"
+    return gemini_service(model=model, prompt=prompt, native_tools=["url"])
+
+
+def run_code_service(task: str, model: str = default_model) -> str:
+    """Execute a task with Gemini's sandboxed code_execution tool.
+
+    The service core of the `gemini_run_code` MCP tool. The model writes and
+    runs Python inside Google's sandbox — never in-process (Hard Rule 6) —
+    and the work it did there is surfaced after the answer: each code block
+    and its execution output, in the order they ran.
+    """
+    contents: Any = [task]
+    config = _build_generate_config(native_tools=["code"], max_tokens=default_max_tokens)
+    response = generate_content_with_fallback(model=model, contents=contents, config=config)
+    _check_safety_block(response, model)
+    _log_citation_events(response, model)
+    text = str(response.text or "")
+    text += _format_code_execution_work(response)
+    return text
 
 
 def generate_thread_title(prompt: str, model: str = default_model) -> str:
