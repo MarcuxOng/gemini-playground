@@ -2,49 +2,44 @@
 
 *"Gemini, by someone who reads the Gemini docs religiously."*
 
-The **Gemini Playground** is a production-quality reference implementation of a Gemini-native AI platform. Built with FastAPI and LangGraph, it functions as a **simulation**: *what would a Google developer working on Gemini capabilities ship?*
+The **Gemini Playground** is a production-quality reference implementation of a Gemini-native AI platform. Built with FastAPI and LangGraph, it is a **Gemini capability layer** — the shared backend for three product candidates (A: corpus core, C: measurement lab, D: second-opinion engine), documented under `.misc/api/docs/ideas/`.
 
 ---
 
 ## Purpose
 
-This project demonstrates hands-on expertise in LLM platform engineering, focusing on Gemini-distinctive capabilities rather than multi-provider parity. Every feature passes the filter: *"Would the Gemini team actually ship this?"*
+Every Gemini call from every product routes through this one backend: MCP at `/mcp/sse` (16 registered tools) and HTTP at `/api/v1/`. The platform is **Gemini-only** (no provider abstraction), GCP-native, and the one chokepoint for paid Gemini calls.
 
 The platform is:
-- A learning sandbox for exploring LLM infrastructure
-- A portfolio piece demonstrating production-quality code
-- A Gemini-native reference — no Claude/GPT mimicry
+- A learning sandbox for exploring LLM platform engineering, Gemini-native APIs, GCP infrastructure.
+- A portfolio piece — production-quality code and demos that can be linked from a CV.
+- A Gemini-native reference — no multi-provider parity.
 
-It is **not** a SaaS, an open-source library, or a multi-provider playground.
+It is **not** a SaaS, an open-source library, or a Claude/GPT clone.
 
 ---
 
 ## Features
 
 ### Core Gemini
-- **Text Generation** — Streaming and non-streaming, with native search grounding, code execution, and URL context tools
-- **Structured Output** — Schema-constrained JSON responses via Pydantic models
-- **ReAct Agents** — LangGraph-powered agents with tool calling: Coder, Research, Analyst, Knowledge presets
-- **Conversation Threads** — Persistent conversation history with LangGraph checkpointer
+- **Text Generation** — streaming and non-streaming, with native search grounding, code execution, and URL context tools
+- **Structured Output** — strict JSON schemas, guaranteed shape
+- **Multimodal Files API** — PDF, image, audio, video, with native understanding (no conversion step)
+- **Context Caching** — cache large documents once on Google's side and reuse across requests
+- **Native Search Grounding** — real web citations, with source links appended
+- **Maps Grounding** — place names, addresses, and distances with a **Places:** citation block
 
-### Multimodal
-- **Files API** — Upload and query images, audio, video, and PDFs in a single call
+### Agents
+- **ReAct Agents** — LangGraph `create_react_agent` presets: coder, research, analyst, knowledge
+- **Consensus Engine** — parallel Flash ensemble + Pro-tier judge synthesis
+- **Shared Context** — cache-backed shared context across agents
+- **Multimodal Inter-Agent Protocol** — pass raw Parts between agents
 
-### Knowledge & Search
-- **RAG Pipeline** — Gemini embeddings + Pinecone vector store, exposed as the `search_knowledge_base` tool
-- **Native Search Grounding** — Gemini-grounded Google Search with citations
-
-### Developer Tools
-- **MCP Server** — Every registered tool auto-exposed at `/mcp/sse` for external clients (Claude Desktop, Cursor)
-- **MCP Client** — Consume external MCP servers as agent tools
-- **Evals Harness** — Gemini-as-judge grading with dataset management and run history
-- **Context Caching** — Cache large contexts for repeated queries, with TTL management
-- **API Keys** — Generate, list, and revoke API keys via `/api/v1/auth`
-
-### Multi-Agent Orchestration
-- **Consensus Engine** — Parallel Flash ensemble + Pro judge synthesis
-- **Shared Context** — Cache-backed context shared across agents, with TTL refresh
-- **Multimodal Protocol** — Raw Gemini `Part` passing between agents via `/agents/invoke`
+### Developer Experience
+- **MCP Server** — every registered tool auto-exposed at `/mcp/sse`
+- **HTTP API** — 11 routers, with `x-api-key` auth and per-route rate limiting
+- **Eval Harness** — Gemini-as-judge evals, with dataset and run management
+- **Observability** — OpenTelemetry → Cloud Trace, structured JSON → Cloud Logging
 
 ---
 
@@ -53,47 +48,42 @@ It is **not** a SaaS, an open-source library, or a multi-provider playground.
 The platform is **GCP-native** and **stateless**, scaling seamlessly on Cloud Run.
 
 ```text
-                       ┌──────────────────────────────────────────────────────────┐
-                       │              Cloud Run — ai-platform                     │
-                       │          (Scales to zero = $0 idle cost)                 │
-                       │                                                          │
-  Client               │  /api/v1/                                                │
-  (React SPA) ────────▶│    auth/          → API key management                  │
-                       │    agents/        → ReAct agents (Gemini)                │
-                       │    threads/       → conversation history                 │
-                       │    rag/           → ingest + query (Pinecone)            │
-                       │    files/         → multimodal uploads (Files API)       │
-                       │    gemini/        → text + streaming + structured        │
-                       │    caches/        → context caching                      │
-                       │    evals/         → datasets + grader runs               │
-                       │    mcp-servers/   → external MCP server management       │
-                       │    health/        → dependency status                    │
-                       │                                                          │
-  MCP Clients          │  /mcp/sse         → FastMCP server (all tools exposed)   │
-  (Claude/Cursor) ────▶│                                                          │
-                       └────────┬─────────────────────────────────────────────────┘
-                                │  ADC (service account — no API keys in prod)
-          ┌─────────────────────┼─────────────────────────────────────────────┐
-          │                     │                                             │
-          ▼                     ▼                                             ▼
-   Neon DB (Postgres)      Gemini / Vertex AI                        Cloud Operations
-   Pinecone (Vectors)       - Gemini Flash 2.x (primary)             Cloud Logging ($0)
-                            - Gemini Pro (complex tasks)             Cloud Trace ($0)
-                            - Gemini Embedding 001                   Secret Manager ($0)
-                            - Native search grounding
+                        ┌──────────────────────────────────────────────────────────┐
+                        │                Cloud Run — ai-platform                   │
+                        │                                                          │
+  Client                │  /api/v1/                                                │
+  (React SPA) ────────▶│    auth/          → API key management                   │
+                        │    agents/        → ReAct agents (LangGraph)             │
+                        │    threads/       → conversation history                 │
+                        │    rag/           → document ingest + query              │
+                        │    files/         → multimodal uploads                   │
+                        │    caches/        → context caching                      │
+                        │    evals/         → eval harness                         │
+                        │    mcp-servers/   → external MCP server admin            │
+                        │    multi-agent/   → consensus engine + shared context    │
+                        │    health/        → dependency probes                    │
+                        │                                                          │
+                        │  /mcp/sse       → FastMCP SSE server (16 tools)          │
+                        └──────────────────────────────────────────────────────────┘
+                                  │
+                       ┌──────────┴──────────┐
+                       │  Gemini / Vertex AI │
+                       └─────────────────────┘
 ```
 
 ---
 
 ## Tech Stack
 
-- **FastAPI** (Python 3.11) — async REST API with OpenAPI docs
-- **LangGraph** + **LangChain** — agent orchestration with checkpointed memory
-- **google-genai** — official Gemini SDK (Files API, native tools, context caching)
-- **SQLAlchemy** + **Postgres** (Neon, free tier) — relational data with `playground_v1_` prefix convention
-- **Pinecone** (free tier) — vector store for RAG
-- **FastMCP** — MCP server at `/mcp/sse` exposing all registered tools
-- **ADC** — Cloud Run service account auth (no API keys in prod)
-- **Redis** — rate limiting (proxied via limiter)
-- **GCP** — Cloud Run, Secret Manager, Cloud Trace, Cloud Logging, Artifact Registry
-- **GitHub Actions** — CI (pytest + ruff + mypy), CD (Cloud Build deploy)
+| Layer | Technology |
+|---|---|
+| API framework | FastAPI + Uvicorn |
+| LLM — default path | LangChain (`langchain-google-vertexai`, `langchain-google-genai`) |
+| LLM — native path | Google Gen AI SDK (`google-genai`) |
+| Agent framework | LangGraph (`create_react_agent`) |
+| Database ORM | SQLAlchemy + Alembic-free auto-create |
+| Database | Neon (Postgres, free tier) / SQLite for local |
+| Vector store | Pinecone (raw SDK) |
+| MCP server | FastMCP (SSE transport) |
+| Rate limiting | SlowAPI + Redis with in-memory fallback |
+| Observability | OpenTelemetry → Cloud Trace; structured JSON → Cloud Logging |

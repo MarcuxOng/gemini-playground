@@ -17,7 +17,7 @@ __all__ = [
 ]
 
 # DO NOT add a "supervisor" or other multi-agent preset here.
-# Multi-agent orchestration is cut — see ROADMAP §4 "Explicitly Cut".
+# Multi-agent orchestration is cut — see the "Out of Scope" list in the project CLAUDE.md.
 # Single-agent presets are fine to add (e.g. "operator" for Computer Use later).
 PRESETS = {
     "coder": build_coder_agent,
