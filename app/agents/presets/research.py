@@ -32,6 +32,13 @@ TOOLS = [
     "get_datetime_info",
     "get_wikipedia_summary",
     "get_youtube_transcript",
+    # The §7 Gemini-native tools — carried here so their eval datasets
+    # (grounded_answer, read_url, run_code, maps_answer) are runnable via
+    # `eval run <dataset> research`. Registry names; merge_tools resolves them.
+    "gemini_grounded_answer",
+    "gemini_read_url",
+    "gemini_run_code",
+    "gemini_maps_answer",
 ]
 
 

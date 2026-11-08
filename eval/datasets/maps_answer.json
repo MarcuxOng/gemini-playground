@@ -1,0 +1,14 @@
+[
+  {
+    "input": "What is the street address of the Eiffel Tower in Paris?",
+    "expected": "The answer states the Eiffel Tower's address (Av. Gustave Eiffel / Champ de Mars, 75007 Paris) and grounds it in Maps places data, surfacing the place source rather than answering from general knowledge alone."
+  },
+  {
+    "input": "How far is Tokyo Station from Narita International Airport, and roughly how long does the drive take?",
+    "expected": "The answer gives an approximate road distance (roughly 60 km) and a drive time in the vicinity of an hour, computed from Maps grounding rather than guessed; large deviations (>2x off) fail."
+  },
+  {
+    "input": "What is the address of the Googleplex, Google's headquarters?",
+    "expected": "The answer states 1600 Amphitheatre Parkway, Mountain View, CA, backed by a Maps places source."
+  }
+]

@@ -34,7 +34,8 @@ TOOLS = [
     "count_tokens",
 ]
 
-# Code execution will be added in Phase 4.2 via Gemini's native code_execution tool.
+# Gemini's native code_execution now exists as the registered `gemini_run_code` tool
+# (P1.3); it currently rides the research preset so its eval dataset is runnable.
 
 
 def build_coder_agent(
