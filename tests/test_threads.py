@@ -25,20 +25,15 @@ def test_threads_requires_auth(client: TestClient):
     assert client.delete("/api/v1/threads/some-id").status_code == 401
 
 
-def test_threads_forbidden_with_non_master_api_key(
-    client: TestClient, auth_headers_non_master
-):
+def test_threads_forbidden_with_non_master_api_key(client: TestClient, auth_headers_non_master):
     """Thread endpoints return 401 for unrecognised API keys."""
     assert client.get("/api/v1/threads/", headers=auth_headers_non_master).status_code == 401
     assert (
-        client.get(
-            "/api/v1/threads/some-id/messages", headers=auth_headers_non_master
-        ).status_code
+        client.get("/api/v1/threads/some-id/messages", headers=auth_headers_non_master).status_code
         == 401
     )
     assert (
-        client.delete("/api/v1/threads/some-id", headers=auth_headers_non_master).status_code
-        == 401
+        client.delete("/api/v1/threads/some-id", headers=auth_headers_non_master).status_code == 401
     )
 
 

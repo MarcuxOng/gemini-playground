@@ -337,7 +337,6 @@ def test_embedding_model_explicit_overrides_env(monkeypatch):
     assert s.gemini_embedding_model == "custom-embed-v1"
 
 
-
 # --- Option B2-revised: gemini-embedding-2 over Vertex's global region ---
 # In the standard test environment GEMINI_API_KEY is always set (see conftest.py /
 # CI config), so the shared app.config.global_client singleton always has

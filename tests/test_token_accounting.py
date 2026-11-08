@@ -58,9 +58,7 @@ def test_run_once_sums_multi_step_tool_calls_within_one_turn():
 def test_raw_usage_metadata_includes_thinking_tokens():
     """Gemini 3 spends most of a short answer on thinking; it is billed as output."""
     request = SimpleNamespace(state=SimpleNamespace())
-    usage = SimpleNamespace(
-        prompt_token_count=6, candidates_token_count=1, thoughts_token_count=81
-    )
+    usage = SimpleNamespace(prompt_token_count=6, candidates_token_count=1, thoughts_token_count=81)
 
     _set_request_tokens(request, usage)
 
@@ -89,7 +87,9 @@ def test_token_accounting_accumulates_across_calls():
     for _ in range(3):
         _set_request_tokens(
             request,
-            SimpleNamespace(prompt_token_count=10, candidates_token_count=5, thoughts_token_count=2),
+            SimpleNamespace(
+                prompt_token_count=10, candidates_token_count=5, thoughts_token_count=2
+            ),
         )
     assert request.state.input_tokens == 30
     assert request.state.output_tokens == 21

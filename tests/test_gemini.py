@@ -6,14 +6,18 @@ from google.genai import errors, types
 
 # --- Model name validation ---
 
-@pytest.mark.parametrize("bad_model", [
-    "../../etc/passwd",
-    "gpt-4",
-    "claude-3",
-    "openai/gpt-4",
-    "",
-    "GEMINI-flash",
-])
+
+@pytest.mark.parametrize(
+    "bad_model",
+    [
+        "../../etc/passwd",
+        "gpt-4",
+        "claude-3",
+        "openai/gpt-4",
+        "",
+        "GEMINI-flash",
+    ],
+)
 def test_gemini_rejects_invalid_model_names(client: TestClient, auth_headers, bad_model: str):
     response = client.post(
         "/api/v1/gemini/",
@@ -23,12 +27,17 @@ def test_gemini_rejects_invalid_model_names(client: TestClient, auth_headers, ba
     assert response.status_code == 422
 
 
-@pytest.mark.parametrize("good_model", [
-    "gemini-2.5-flash",
-    "gemini-1.5-pro",
-    "text-embedding-004",
-])
-def test_gemini_accepts_valid_model_names(client: TestClient, auth_headers, mock_gemini_client_global, good_model: str):
+@pytest.mark.parametrize(
+    "good_model",
+    [
+        "gemini-2.5-flash",
+        "gemini-1.5-pro",
+        "text-embedding-004",
+    ],
+)
+def test_gemini_accepts_valid_model_names(
+    client: TestClient, auth_headers, mock_gemini_client_global, good_model: str
+):
     response = client.post(
         "/api/v1/gemini/",
         json={"model": good_model, "prompt": "hello"},
@@ -37,16 +46,21 @@ def test_gemini_accepts_valid_model_names(client: TestClient, auth_headers, mock
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("bad_field,bad_value", [
-    ("thinking_level", "maximal"),
-    ("thinking_level", 42),
-    # removed-but-still-sent deprecated params must be rejected, not silently ignored
-    ("thinking_budget", 1024),
-    ("temperature", 0.7),
-    ("top_p", 0.9),
-    ("top_k", 20),
-])
-def test_gemini_rejects_out_of_range_sampling_params(client: TestClient, auth_headers, bad_field: str, bad_value: float):
+@pytest.mark.parametrize(
+    "bad_field,bad_value",
+    [
+        ("thinking_level", "maximal"),
+        ("thinking_level", 42),
+        # removed-but-still-sent deprecated params must be rejected, not silently ignored
+        ("thinking_budget", 1024),
+        ("temperature", 0.7),
+        ("top_p", 0.9),
+        ("top_k", 20),
+    ],
+)
+def test_gemini_rejects_out_of_range_sampling_params(
+    client: TestClient, auth_headers, bad_field: str, bad_value: float
+):
     response = client.post(
         "/api/v1/gemini/",
         json={"model": "gemini-2.5-flash", "prompt": "hello", bad_field: bad_value},
@@ -65,6 +79,7 @@ def test_gemini_structured_rejects_invalid_model(client: TestClient, auth_header
 
 
 # --- Existing tests ---
+
 
 def _fake_model(name: str, actions: list[str]) -> MagicMock:
     m = MagicMock()
@@ -129,6 +144,7 @@ def test_list_gemini_models_tolerates_one_endpoint_failing(
     assert response.status_code == 200
     assert [m["name"] for m in response.json()["data"]] == ["gemini-2.5-flash"]
 
+
 def test_gemini_service_returns_401_without_auth(client: TestClient):
     response = client.post("/api/v1/gemini/", json={"model": "gemini-pro", "prompt": "hello"})
     assert response.status_code in [401, 422]
@@ -159,11 +175,11 @@ def test_gemini_structured_happy_path(client: TestClient, auth_headers, mock_gem
 
 def test_gemini_native_tools_search(client: TestClient, auth_headers, mock_gemini_client_global):
     mock_gemini_client_global.models.generate_content.reset_mock()
-    
+
     mock_response = MagicMock()
     mock_response.text = "The answer is Google."
     mock_response.prompt_feedback = None
-    
+
     # Mock grounding metadata
     mock_candidate = MagicMock()
     mock_chunk = MagicMock()
@@ -172,23 +188,19 @@ def test_gemini_native_tools_search(client: TestClient, auth_headers, mock_gemin
     mock_candidate.grounding_metadata.grounding_chunks = [mock_chunk]
     mock_response.candidates = [mock_candidate]
     mock_gemini_client_global.models.generate_content.return_value = mock_response
-    
+
     response = client.post(
         "/api/v1/gemini/",
-        json={
-            "model": "gemini-2.5-flash",
-            "prompt": "What is Google?",
-            "native_tools": ["search"]
-        },
-        headers=auth_headers
+        json={"model": "gemini-2.5-flash", "prompt": "What is Google?", "native_tools": ["search"]},
+        headers=auth_headers,
     )
-    
+
     assert response.status_code == 200
     data = response.json()["data"]
     assert "The answer is Google." in data
     assert "Sources:" in data
     assert "[Google Search Reference](https://google.com)" in data
-    
+
     call_kwargs = mock_gemini_client_global.models.generate_content.call_args.kwargs
     assert call_kwargs["model"] == "gemini-2.5-flash"
     assert "config" in call_kwargs
@@ -197,29 +209,31 @@ def test_gemini_native_tools_search(client: TestClient, auth_headers, mock_gemin
     assert config.tools[0].google_search is not None
 
 
-def test_gemini_native_tools_code_and_url(client: TestClient, auth_headers, mock_gemini_client_global):
+def test_gemini_native_tools_code_and_url(
+    client: TestClient, auth_headers, mock_gemini_client_global
+):
     mock_gemini_client_global.models.generate_content.reset_mock()
-    
+
     mock_response = MagicMock()
     mock_response.text = "Executed code and scraped URL successfully."
     mock_response.candidates = []
     mock_response.prompt_feedback = None
     mock_gemini_client_global.models.generate_content.return_value = mock_response
-    
+
     response = client.post(
         "/api/v1/gemini/",
         json={
             "model": "gemini-2.5-flash",
             "prompt": "Run code on this page: https://example.com",
-            "native_tools": ["code", "url"]
+            "native_tools": ["code", "url"],
         },
-        headers=auth_headers
+        headers=auth_headers,
     )
-    
+
     assert response.status_code == 200
     data = response.json()["data"]
     assert "Executed code and scraped URL successfully." in data
-    
+
     call_kwargs = mock_gemini_client_global.models.generate_content.call_args.kwargs
     config = call_kwargs["config"]
     assert len(config.tools) == 2
@@ -230,7 +244,9 @@ def test_gemini_native_tools_code_and_url(client: TestClient, auth_headers, mock
     assert has_url
 
 
-def test_gemini_stop_sequences_and_system_instruction(client: TestClient, auth_headers, mock_gemini_client_global):
+def test_gemini_stop_sequences_and_system_instruction(
+    client: TestClient, auth_headers, mock_gemini_client_global
+):
     mock_gemini_client_global.models.generate_content.reset_mock()
 
     mock_response = MagicMock()
@@ -258,7 +274,9 @@ def test_gemini_stop_sequences_and_system_instruction(client: TestClient, auth_h
     assert config.system_instruction == "Always respond in French."
 
 
-def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_headers, mock_gemini_client_global):
+def test_gemini_sampling_params_use_langchain_path(
+    client: TestClient, auth_headers, mock_gemini_client_global
+):
     """With no attachments/native_tools/cache_id/stop_sequences/system_instruction present,
     sampling params should route through the LangChain path, not the raw client.
 
@@ -284,7 +302,9 @@ def test_gemini_sampling_params_use_langchain_path(client: TestClient, auth_head
     assert call_kwargs["thinking_level"] == "high"
 
 
-def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers, mock_gemini_client_global):
+def test_gemini_sampling_params_raw_client_path(
+    client: TestClient, auth_headers, mock_gemini_client_global
+):
     """Combined with system_instruction (which forces the raw client path), sampling params
     must still reach GenerateContentConfig rather than being dropped."""
     mock_gemini_client_global.models.generate_content.reset_mock()
@@ -316,36 +336,38 @@ def test_gemini_sampling_params_raw_client_path(client: TestClient, auth_headers
 
 
 @pytest.mark.asyncio
-async def test_gemini_stream_native_tools(client: TestClient, auth_headers, mock_gemini_client_global):
+async def test_gemini_stream_native_tools(
+    client: TestClient, auth_headers, mock_gemini_client_global
+):
     mock_aio = MagicMock()
     mock_gemini_client_global.aio = mock_aio
 
     mock_generate = AsyncMock()
     mock_aio.models.generate_content_stream = mock_generate
-    
+
     async def mock_stream_gen():
         mock_chunk = MagicMock()
         mock_chunk.text = "This is streamed response."
         mock_chunk.candidates = []
         yield mock_chunk
-        
+
     mock_generate.return_value = mock_stream_gen()
-    
+
     response = client.post(
         "/api/v1/gemini/stream",
         json={
             "model": "gemini-2.5-flash",
             "prompt": "Stream this prompt",
-            "native_tools": ["search"]
+            "native_tools": ["search"],
         },
-        headers=auth_headers
+        headers=auth_headers,
     )
-    
+
     assert response.status_code == 200
     # Collect streamed response text
     content_str = response.content.decode("utf-8")
     assert "This is streamed response." in content_str
-    
+
     mock_generate.assert_called_once()
     call_kwargs = mock_generate.call_args.kwargs
     config = call_kwargs["config"]
@@ -354,7 +376,9 @@ async def test_gemini_stream_native_tools(client: TestClient, auth_headers, mock
 
 
 @pytest.mark.asyncio
-async def test_gemini_stream_sampling_params(client: TestClient, auth_headers, mock_gemini_client_global):
+async def test_gemini_stream_sampling_params(
+    client: TestClient, auth_headers, mock_gemini_client_global
+):
     """Streaming always uses the raw client, so sampling params should reach
     GenerateContentConfig even with no other raw-client trigger present."""
     mock_aio = MagicMock()

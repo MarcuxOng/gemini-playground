@@ -39,9 +39,7 @@ def test_key_management_requires_the_header(client: TestClient, method: str, pat
     assert response.status_code == 422
 
 
-def test_generated_key_authenticates_and_is_returned_only_once(
-    client: TestClient, auth_headers
-):
+def test_generated_key_authenticates_and_is_returned_only_once(client: TestClient, auth_headers):
     response = client.post("/api/v1/auth/keys/generate?name=probe-key", headers=auth_headers)
 
     assert response.status_code == 200
@@ -59,9 +57,9 @@ def test_revoked_key_stops_authenticating(client: TestClient, auth_headers):
     # `tests/test.db` is a real file that survives between runs, so a fixed name would
     # match a row left by an earlier run and this test would revoke the wrong key.
     name = f"doomed-key-{uuid.uuid4()}"
-    created = client.post(
-        f"/api/v1/auth/keys/generate?name={name}", headers=auth_headers
-    ).json()["data"]
+    created = client.post(f"/api/v1/auth/keys/generate?name={name}", headers=auth_headers).json()[
+        "data"
+    ]
     raw_key = created["api_key"]
 
     listed = client.get("/api/v1/auth/keys", headers=auth_headers).json()["data"]

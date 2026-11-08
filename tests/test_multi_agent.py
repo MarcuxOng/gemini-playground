@@ -127,9 +127,7 @@ def test_agent_invoke_rejects_both_targets(
     assert resp.status_code == 422
 
 
-def test_agent_invoke_with_metadata(
-    client: TestClient, internal_auth_headers, delegated_owner_id
-):
+def test_agent_invoke_with_metadata(client: TestClient, internal_auth_headers, delegated_owner_id):
     """Message metadata is accepted."""
     resp = client.post(
         "/api/v1/agents/invoke",
@@ -356,7 +354,10 @@ class TestConsensusEndpoint:
     def _patch_judge_response(mock_client, text=None):
         """Patch ``client.models.generate_content`` with a JSON response the judge can parse."""
         response = MagicMock()
-        response.text = text or '{"answer": "synthesised answer", "reasoning": "weighed perspectives", "consensus": true}'
+        response.text = (
+            text
+            or '{"answer": "synthesised answer", "reasoning": "weighed perspectives", "consensus": true}'
+        )
         response.candidates = []
         response.prompt_feedback = None
         return patch.object(mock_client.models, "generate_content", return_value=response)
@@ -368,7 +369,9 @@ class TestConsensusEndpoint:
         )
         assert resp.status_code == 401
 
-    def test_consensus_returns_200_with_auth(self, client: TestClient, auth_headers, mock_gemini_client_global):
+    def test_consensus_returns_200_with_auth(
+        self, client: TestClient, auth_headers, mock_gemini_client_global
+    ):
         with self._patch_judge_response(mock_gemini_client_global):
             resp = client.post(
                 "/api/v1/agents/consensus",
@@ -384,7 +387,9 @@ class TestConsensusEndpoint:
         assert "perspectives" in data["data"]
         assert "failed_workers" in data["data"]
 
-    def test_consensus_returns_default_perspectives(self, client: TestClient, auth_headers, mock_gemini_client_global):
+    def test_consensus_returns_default_perspectives(
+        self, client: TestClient, auth_headers, mock_gemini_client_global
+    ):
         with self._patch_judge_response(mock_gemini_client_global):
             resp = client.post(
                 "/api/v1/agents/consensus",
@@ -395,7 +400,9 @@ class TestConsensusEndpoint:
         data = resp.json()["data"]
         assert len(data["perspectives"]) == 4  # default perspectives
 
-    def test_consensus_accepts_custom_perspectives(self, client: TestClient, auth_headers, mock_gemini_client_global):
+    def test_consensus_accepts_custom_perspectives(
+        self, client: TestClient, auth_headers, mock_gemini_client_global
+    ):
         with self._patch_judge_response(mock_gemini_client_global):
             resp = client.post(
                 "/api/v1/agents/consensus",
@@ -410,7 +417,9 @@ class TestConsensusEndpoint:
         assert len(data["perspectives"]) == 2
         assert data["perspectives"][0]["perspective"] == "backend engineer"
 
-    def test_consensus_accepts_custom_models(self, client: TestClient, auth_headers, mock_gemini_client_global):
+    def test_consensus_accepts_custom_models(
+        self, client: TestClient, auth_headers, mock_gemini_client_global
+    ):
         import app.services.gemini as gemini_svc
 
         # Snapshot the builder call count to isolate this test
@@ -431,9 +440,7 @@ class TestConsensusEndpoint:
 
         # Workers run via gemini_service → build_llm_with_region_fallback(model).invoke().
         # Verify the 2 workers each built an LLM for the worker model.
-        worker_calls = gemini_svc.build_llm_with_region_fallback.call_args_list[
-            build_llm_before:
-        ]
+        worker_calls = gemini_svc.build_llm_with_region_fallback.call_args_list[build_llm_before:]
         assert len(worker_calls) == 2
         for call in worker_calls:
             assert call[0][0] == "gemini-2.5-flash", f"worker model mismatch: {call[0]}"
@@ -467,9 +474,7 @@ class TestConsensusInputLimits:
         )
         assert response.status_code == 422
 
-    def test_perspective_list_within_cap_is_accepted(
-        self, client: TestClient, auth_headers: dict
-    ):
+    def test_perspective_list_within_cap_is_accepted(self, client: TestClient, auth_headers: dict):
         with patch("app.routers.multi_agent.run_consensus") as mock_run:
             mock_run.return_value = MagicMock(
                 to_dict=lambda: {

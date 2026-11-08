@@ -12,7 +12,9 @@ BOB_KEY = "bob-plaintext-key"
 
 
 class TestCachesRouter:
-    def test_create_cache_returns_200(self, client: TestClient, auth_headers, gemini_caches, make_gemini_cache):
+    def test_create_cache_returns_200(
+        self, client: TestClient, auth_headers, gemini_caches, make_gemini_cache
+    ):
         gemini_caches.create.return_value = make_gemini_cache(name="cachedContents/abc123")
 
         response = client.post(
@@ -83,7 +85,9 @@ class TestCachesRouter:
         assert response.status_code == 200
         assert response.json()["data"] == []
 
-    def test_get_cache_returns_200(self, client: TestClient, auth_headers, gemini_caches, make_gemini_cache):
+    def test_get_cache_returns_200(
+        self, client: TestClient, auth_headers, gemini_caches, make_gemini_cache
+    ):
         gemini_caches.get.return_value = make_gemini_cache(name="cachedContents/abc123")
 
         response = client.get("/api/v1/caches/cachedContents/abc123", headers=auth_headers)
@@ -100,7 +104,9 @@ class TestCachesRouter:
         assert response.json()["data"]["deleted"] == "cachedContents/abc123"
         gemini_caches.delete.assert_called_once_with(name="cachedContents/abc123")
 
-    def test_update_cache_returns_200(self, client: TestClient, auth_headers, gemini_caches, make_gemini_cache):
+    def test_update_cache_returns_200(
+        self, client: TestClient, auth_headers, gemini_caches, make_gemini_cache
+    ):
         gemini_caches.update.return_value = make_gemini_cache(name="cachedContents/abc123")
 
         response = client.patch(
@@ -331,7 +337,11 @@ class TestCacheOwnership:
         """The leak that mattered: reusing a cache_id reads the cached documents."""
         resp = client.post(
             "/api/v1/gemini/",
-            json={"model": "gemini-3.5-flash", "prompt": "summarise the document", "cache_id": alice_cache},
+            json={
+                "model": "gemini-3.5-flash",
+                "prompt": "summarise the document",
+                "cache_id": alice_cache,
+            },
             headers={"X-API-Key": BOB_KEY},
         )
         assert resp.status_code == 403
